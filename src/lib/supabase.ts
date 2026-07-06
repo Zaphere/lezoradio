@@ -1,10 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 import type { StationRecord, ContentSource } from './types';
+import { getRegionBySlug } from './drcRegions';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+export const DATA_RETENTION_MS = 72 * 60 * 60 * 1000; // 72 hours — keep 3 days
+
+function retentionCutoff(): string {
+  return new Date(Date.now() - DATA_RETENTION_MS).toISOString();
+}
 
 let _dbReady: boolean | null = null;
 
@@ -35,18 +42,40 @@ const _silentFetch = async <T>(fn: () => any): Promise<T[]> => {
 };
 
 export async function fetchNewsItems(region?: string, category?: string): Promise<any[]> {
-  return _silentFetch(async () => {
-    let q = supabase.from('news_items').select('*').order('ingested_at', { ascending: false }).limit(50);
-    if (region) q = q.eq('region', region);
+  const events = await _silentFetch(async () => {
+    let q = supabase.from('events').select('*').gte('created_at', retentionCutoff()).order('created_at', { ascending: false }).limit(50);
+    if (region) q = q.eq('province', region);
     if (category) q = q.eq('category', category);
     return q;
   });
+
+  // Map events table structure to NewsItem interface
+  return events.map((event: any) => ({
+    id: event.id,
+    feed_id: event.provider,
+    title: event.title,
+    description: event.summary || '',
+    content: event.description || '',
+    url: event.metadata?.url || '',
+    region: event.province || event.country || 'global',
+    category: event.category || 'global',
+    published_at: event.occurred_at || event.created_at,
+    ingested_at: event.created_at,
+    is_processed: event.status !== 'active',
+  }));
 }
 
 export async function fetchRadioScripts(region?: string, category?: string): Promise<any[]> {
   const rows = await _silentFetch(async () => {
-    let q = supabase.from('radio_scripts').select('*').eq('is_read', false).order('created_at', { ascending: true });
-    if (region) q = q.eq('region', region);
+    let q = supabase.from('radio_scripts').select('*').eq('is_read', false).gte('created_at', retentionCutoff()).order('created_at', { ascending: true });
+    if (region) {
+      const drcRegion = getRegionBySlug(region);
+      if (drcRegion) {
+        q = q.in('region', [region, 'congo']);
+      } else {
+        q = q.eq('region', region);
+      }
+    }
     if (category) q = q.eq('category', category);
     return q;
   });
@@ -67,7 +96,7 @@ export async function fetchBroadcastQueue(region?: string): Promise<any[]> {
 
 export async function fetchAlerts(region?: string): Promise<any[]> {
   return _silentFetch(async () => {
-    let q = supabase.from('alerts').select('*').eq('is_active', true).order('created_at', { ascending: false });
+    let q = supabase.from('alerts').select('*').eq('is_active', true).gte('created_at', retentionCutoff()).order('created_at', { ascending: false });
     if (region) q = q.eq('region', region);
     return q;
   });
@@ -75,7 +104,7 @@ export async function fetchAlerts(region?: string): Promise<any[]> {
 
 export async function markNewsItemProcessed(itemId: string): Promise<boolean> {
   try {
-    const { error } = await supabase.from('news_items').update({ is_processed: true }).eq('id', itemId);
+    const { error } = await supabase.from('events').update({ status: 'processed' }).eq('id', itemId);
     if (error) {
       console.warn('Failed to mark news item as processed:', error.message);
       return false;
@@ -197,4 +226,9 @@ export async function updateSourceHealth(id: string, data: Partial<ContentSource
   } catch (err) {
     console.warn('Failed to update source health:', err);
   }
+}
+
+export async function pruneOldData(): Promise<{ success: boolean; deleted: number }> {
+  // Let the backend handle database cleanups to avoid browser clients pruning database tables
+  return { success: true, deleted: 0 };
 }
