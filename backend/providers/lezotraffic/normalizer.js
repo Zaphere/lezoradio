@@ -177,14 +177,15 @@ function normalizeDestination(item, endpoint) {
 }
 
 function normalizeCity(item, endpoint) {
-  const providerEventId = `${endpoint}-${item.name}-${Date.now()}`;
+  const cityName = item.name || 'unknown';
+  const providerEventId = `${endpoint}-${cityName}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
   return {
     provider: 'lezotraffic',
     provider_record_id: providerEventId,
     provider_type: 'city',
-    title: item.name || 'City',
-    summary: `City: ${item.name}, Province: ${item.province}, Active incidents: ${item.activeIncidents}`,
+    title: cityName,
+    summary: `City: ${cityName}, Province: ${item.province}, Active incidents: ${item.activeIncidents}`,
     description: null,
     category: 'geo',
     subcategory: 'city',
@@ -192,7 +193,7 @@ function normalizeCity(item, endpoint) {
     language: 'fr',
     country: 'CD',
     province: item.province || null,
-    city: item.name || null,
+    city: cityName,
     latitude: null,
     longitude: null,
     status: 'active',
@@ -211,21 +212,22 @@ function normalizeCity(item, endpoint) {
 }
 
 function normalizeProvince(item, endpoint) {
-  const providerEventId = `${endpoint}-${item.name}-${Date.now()}`;
+  const provinceName = item.name || 'unknown';
+  const providerEventId = `${endpoint}-${provinceName}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
   return {
     provider: 'lezotraffic',
     provider_record_id: providerEventId,
     provider_type: 'province',
-    title: item.name || 'Province',
-    summary: `Province: ${item.name}, Cities: ${item.cities?.join(', ') || 'None'}, Active incidents: ${item.activeIncidents}`,
+    title: provinceName,
+    summary: `Province: ${provinceName}, Cities: ${item.cities?.join(', ') || 'None'}, Active incidents: ${item.activeIncidents}`,
     description: null,
     category: 'geo',
     subcategory: 'province',
     priority: 5,
     language: 'fr',
     country: 'CD',
-    province: item.name || null,
+    province: provinceName,
     city: null,
     latitude: null,
     longitude: null,

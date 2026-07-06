@@ -6,7 +6,7 @@ const ISO_COUNTRY_REGEX = /^[A-Z]{2}$/;
 const VALID_CATEGORIES = new Set([
   'traffic', 'emergency', 'news', 'weather', 'security',
   'event', 'agriculture', 'sports', 'tourism', 'transport',
-  'government', 'health',
+  'government', 'health', 'geo',
 ]);
 
 const VALID_STATUSES = new Set(['active', 'resolved', 'archived']);
