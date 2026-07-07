@@ -53,10 +53,10 @@ export const ENDPOINT_AVAILABILITY = {
   [LEZOTRAFFIC_ENDPOINTS.RADIO_PROGRAM]: { available: true, retryAfter: null },
 };
 
-export function markEndpointUnavailable(endpointPath) {
+export function markEndpointUnavailable(endpointPath, retryAfterMs = 24 * 60 * 60 * 1000) {
   if (ENDPOINT_AVAILABILITY[endpointPath]) {
     ENDPOINT_AVAILABILITY[endpointPath].available = false;
-    ENDPOINT_AVAILABILITY[endpointPath].retryAfter = Date.now() + (24 * 60 * 60 * 1000);
+    ENDPOINT_AVAILABILITY[endpointPath].retryAfter = Date.now() + retryAfterMs;
   }
 }
 

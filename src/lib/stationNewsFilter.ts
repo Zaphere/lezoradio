@@ -1,36 +1,27 @@
 import type { NewsItem, NewsCategory, StationRecord } from './types';
 
-/** Maps a station to the slug used in news_items.region */
 const STATION_NEWS_REGION: Record<string, string> = {
-  'South Africa': 'south-africa',
+  'DRC': 'congo',
   'DR Congo': 'congo',
   'Congo': 'congo',
-  'Tanzania': 'tanzania',
-  'Eswatini': 'eswatini',
 };
 
-/** Macro broadcast area → news region slugs that belong to it */
-const MACRO_NEWS_REGIONS: Record<string, string[]> = {
-  'Southern Africa': ['south-africa', 'eswatini', 'zambia', 'malawi', 'botswana', 'namibia', 'mozambique'],
-  'Central Africa': ['congo', 'cameroon', 'gabon', 'chad'],
-  'East Africa': ['tanzania', 'kenya', 'uganda', 'rwanda', 'burundi', 'south-sudan'],
-  'North Africa': ['egypt', 'algeria', 'morocco', 'tunisia'],
+const DRC_SECONDARY_REGIONS: Record<string, string[]> = {
+  kinshasa: ['central-africa'],
+  goma: ['central-africa', 'east-africa'],
+  lubumbashi: ['central-africa', 'southern-africa'],
 };
 
-export function getStationNewsRegion(station: Pick<StationRecord, 'name' | 'country'>): string {
+function getStationNewsRegion(station: Pick<StationRecord, 'name' | 'country'>): string {
   if (STATION_NEWS_REGION[station.name]) return STATION_NEWS_REGION[station.name];
   return station.country.toLowerCase().replace(/\s+/g, '-');
 }
 
-function macroRegionsFor(station: Pick<StationRecord, 'region'>): string[] {
-  return MACRO_NEWS_REGIONS[station.region] ?? [];
-}
-
-function isInStationArea(item: NewsItem, station: Pick<StationRecord, 'name' | 'country' | 'region'>): boolean {
-  const slug = getStationNewsRegion(station);
-  if (item.region === slug) return true;
-  if (item.region === 'global') return true;
-  return macroRegionsFor(station).includes(item.region);
+function getSecondaryRegions(station: Pick<StationRecord, 'region'>): string[] {
+  if (station.region && DRC_SECONDARY_REGIONS[station.region]) {
+    return DRC_SECONDARY_REGIONS[station.region];
+  }
+  return ['central-africa'];
 }
 
 function deduplicateByUrl(items: NewsItem[]): NewsItem[] {
@@ -49,40 +40,32 @@ export function filterNewsForStation(
   category?: NewsCategory,
 ): NewsItem[] {
   const slug = getStationNewsRegion(station);
-  const macro = macroRegionsFor(station);
-  const isGlobalChannel = !station.region;
+  const secondary = getSecondaryRegions(station);
 
   let filtered: NewsItem[];
 
   if (category === 'global') {
     filtered = items.filter((i) => i.category === 'global');
   } else if (category === 'regional') {
-    filtered = isGlobalChannel
-      ? items.filter((i) => i.category === 'regional')
-      : items.filter(
-          (i) => i.category === 'regional' && (i.region === slug || macro.includes(i.region)),
-        );
+    filtered = items.filter(
+      (i) => i.category === 'regional' && (i.region === slug || secondary.includes(i.region)),
+    );
   } else if (category === 'local') {
     filtered = items.filter((i) => i.category === 'local' && i.region === slug);
   } else if (category === 'traffic') {
-    filtered = isGlobalChannel
-      ? items.filter((i) => i.category === 'traffic')
-      : items.filter(
-          (i) => i.category === 'traffic' && (i.region === slug || macro.includes(i.region)),
-        );
+    filtered = items.filter(
+      (i) => i.category === 'traffic' && (i.region === slug || secondary.includes(i.region)),
+    );
   } else if (category === 'alert') {
-    filtered = isGlobalChannel
-      ? items.filter((i) => i.category === 'alert')
-      : items.filter(
-          (i) => i.category === 'alert' && (i.region === slug || macro.includes(i.region)),
-        );
+    filtered = items.filter((i) => i.region === slug || secondary.includes(i.region));
   } else {
     filtered = items.filter((i) => {
       if (i.category === 'global') return true;
-      if (i.category === 'regional') return isGlobalChannel || i.region === slug || macro.includes(i.region);
+      if (i.category === 'regional') return i.region === slug || secondary.includes(i.region);
       if (i.category === 'local') return i.region === slug;
-      if (i.category === 'traffic' || i.category === 'alert') return true;
-      return isGlobalChannel || isInStationArea(i, station);
+      if (i.category === 'traffic') return i.region === slug || secondary.includes(i.region);
+      if (i.category === 'alert') return i.region === slug || secondary.includes(i.region);
+      return true;
     });
   }
 

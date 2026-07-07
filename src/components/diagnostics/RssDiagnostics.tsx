@@ -76,7 +76,7 @@ export default function RssDiagnostics({ sources, onItemsGenerated }: Props) {
   };
 
   return (
-    <div className="glass rounded-2xl p-4 space-y-3">
+    <div className="card p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-text-primary">RSS Diagnostics</h3>
         {scanning && (
@@ -102,7 +102,7 @@ export default function RssDiagnostics({ sources, onItemsGenerated }: Props) {
         <button
           onClick={handleDiagnostics}
           disabled={scanning || ingesting || sources.length === 0}
-          className="flex-1 py-2.5 rounded-xl bg-white/10 text-text-secondary hover:bg-white/20 
+          className="flex-1 py-2.5 rounded-xl bg-surface text-text-secondary hover:bg-surface-hover 
                      text-xs font-bold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
         >
           Run Feed Diagnostics

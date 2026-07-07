@@ -14,9 +14,9 @@ export default function Admin() {
         <h2 className="text-sm font-semibold text-text-primary mb-4">Feeds</h2>
         {loading ? (
           <div className="space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="h-10 rounded-lg bg-white/5 animate-pulse" />
-            ))}
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-10 rounded-lg bg-surface animate-pulse" />
+              ))}
           </div>
         ) : feeds.length === 0 ? (
           <p className="text-text-secondary/50 text-xs text-center py-6">

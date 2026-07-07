@@ -7,7 +7,7 @@ interface Props {
 export default function QueuePreview({ items }: Props) {
   if (items.length === 0) {
     return (
-      <div className="glass rounded-2xl p-4">
+      <div className="card p-4">
         <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">Up Next</h4>
         <p className="text-text-secondary/50 text-xs text-center py-4">Queue is empty</p>
       </div>
@@ -31,13 +31,13 @@ export default function QueuePreview({ items }: Props) {
   };
 
   return (
-    <div className="glass rounded-2xl p-4">
+    <div className="card p-4">
       <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-3">Up Next</h4>
       <div className="space-y-2">
         {items.slice(0, 3).map((item, i) => (
           <div
             key={item.script.id}
-            className="flex items-center gap-3 p-3 rounded-xl bg-white/5 animate-slide-up"
+            className="flex items-center gap-3 p-3 rounded-xl bg-surface animate-slide-up"
             style={{ animationDelay: `${i * 50}ms` }}
           >
             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${priorityColors[item.priority] || 'bg-gray-400'}`}>

@@ -1,5 +1,5 @@
 import { BaseProvider } from '../baseProvider.js';
-import LezoTrafficApiClient, { EndpointUnavailableError } from './apiClient.js';
+import LezoTrafficApiClient, { EndpointUnavailableError, LezoTrafficAPIError } from './apiClient.js';
 import { getConfig, getEnabledEndpoints, validateConfig, getConfigSummary } from './config.js';
 import {
   LEZOTRAFFIC_ENDPOINTS,
@@ -17,6 +17,7 @@ import {
 } from './endpoints.js';
 import { normalizeLezoTrafficItems } from './normalizer.js';
 import { insertEvent } from '../../supabaseClient.js';
+import capabilities from './capabilities.js';
 
 const ENDPOINT_MAP = {
   alerts: { path: LEZOTRAFFIC_ENDPOINTS.ALERTS, params: getAlertsParams },
@@ -155,6 +156,9 @@ class LezoTrafficProvider extends BaseProvider {
         if (error instanceof EndpointUnavailableError) {
           markEndpointUnavailable(endpointConfig.path);
           this.log(`Endpoint ${endpoint} unavailable (HTTP ${error.httpStatus}), retrying after 24h`, 'warn');
+        } else if (error instanceof LezoTrafficAPIError && error.httpStatus >= 500) {
+          markEndpointUnavailable(endpointConfig.path);
+          this.log(`Endpoint ${endpoint} failed with server error (HTTP ${error.httpStatus}), marking unavailable for 24h`, 'warn');
         }
 
         const errorMsg = `Failed to sync ${endpoint}: ${error.message}`;

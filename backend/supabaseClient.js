@@ -15,6 +15,56 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
   realtime: { transport: ws },
 });
 
+// ============================================================================
+// Schema capability detection (cached)
+// Probes which optional columns exist on key tables so we can avoid
+// inserting fields that haven't been migrated yet.
+// ============================================================================
+const schemaCapabilities = {
+  newsItemsHasLanguage: null,
+  newsItemsHasIsTranslated: null,
+  newsItemsHasTranslationRequired: null,
+  feedsHasLanguage: null,
+  ingestionLogsHasDurationMs: null,
+};
+
+async function detectSchemaCapabilities() {
+  // Probe news_items
+  const { data: ni } = await supabase.from('news_items').select('language').limit(1);
+  schemaCapabilities.newsItemsHasLanguage = ni !== null;
+
+  const { data: ni2 } = await supabase.from('news_items').select('is_translated').limit(1);
+  schemaCapabilities.newsItemsHasIsTranslated = ni2 !== null;
+
+  const { data: ni3 } = await supabase.from('news_items').select('translation_required').limit(1);
+  schemaCapabilities.newsItemsHasTranslationRequired = ni3 !== null;
+
+  const { data: f } = await supabase.from('feeds').select('language').limit(1);
+  schemaCapabilities.feedsHasLanguage = f !== null;
+
+  const { data: il } = await supabase.from('ingestion_logs').select('duration_ms').limit(1);
+  schemaCapabilities.ingestionLogsHasDurationMs = il !== null;
+
+  console.log('[supabaseClient] Schema capabilities detected:', schemaCapabilities);
+  if (!schemaCapabilities.newsItemsHasLanguage) {
+    console.warn('[supabaseClient] ⚠️  Missing column: news_items.language — run pending migrations in Supabase SQL editor');
+  }
+  if (!schemaCapabilities.newsItemsHasIsTranslated) {
+    console.warn('[supabaseClient] ⚠️  Missing column: news_items.is_translated — run pending migrations in Supabase SQL editor');
+  }
+  if (!schemaCapabilities.feedsHasLanguage) {
+    console.warn('[supabaseClient] ⚠️  Missing column: feeds.language — run pending migrations in Supabase SQL editor');
+  }
+  if (!schemaCapabilities.ingestionLogsHasDurationMs) {
+    console.warn('[supabaseClient] ⚠️  Missing column: ingestion_logs.duration_ms — run pending migrations in Supabase SQL editor');
+  }
+}
+
+// Run detection once at startup (fire-and-forget, non-blocking)
+detectSchemaCapabilities().catch(err => {
+  console.warn('[supabaseClient] Schema detection failed:', err.message);
+});
+
 export async function insertNewsItem(item, feedId, region, category, language = null) {
   try {
     // Dedup by URL
@@ -54,13 +104,21 @@ export async function insertNewsItem(item, feedId, region, category, language = 
       url: item.url,
       region: region,
       category: category,
-      language: language || 'fr',
       published_at: item.published_at,
       ingested_at: new Date().toISOString(),
       is_processed: false,
-      is_translated: false,
-      translation_required: false,
     };
+
+    // Only include columns that exist in the current DB schema
+    if (schemaCapabilities.newsItemsHasLanguage !== false) {
+      insertData.language = language || 'fr';
+    }
+    if (schemaCapabilities.newsItemsHasIsTranslated !== false) {
+      insertData.is_translated = false;
+    }
+    if (schemaCapabilities.newsItemsHasTranslationRequired !== false) {
+      insertData.translation_required = false;
+    }
 
     const { data, error } = await supabase
       .from('news_items')
@@ -74,7 +132,7 @@ export async function insertNewsItem(item, feedId, region, category, language = 
     if (error.code === '23505') {
       return null;
     }
-    console.error('Error inserting news item:', error.message.substring(0, 100));
+    console.error('Error inserting news item:', error.message.substring(0, 150));
     return null;
   }
 }
@@ -100,7 +158,8 @@ export async function getOrCreateFeed(name, url, region, category, language = nu
       is_active: true,
       last_fetched_at: new Date().toISOString(),
     };
-    if (language) {
+    // Only include language column if the DB has it
+    if (language && schemaCapabilities.feedsHasLanguage !== false) {
       insertData.language = language;
     }
 

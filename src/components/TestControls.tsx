@@ -6,7 +6,7 @@ interface Props {
 
 export default function TestControls({ onSimulateNews, onTriggerAlert, onReset }: Props) {
   return (
-    <div className="glass rounded-2xl p-4">
+    <div className="card p-4">
       <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-3">Test Controls</h4>
       <div className="grid grid-cols-3 gap-2">
         <button
@@ -29,7 +29,7 @@ export default function TestControls({ onSimulateNews, onTriggerAlert, onReset }
         </button>
         <button
           onClick={onReset}
-          className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-white/10 text-text-secondary hover:bg-white/20 transition-all cursor-pointer"
+          className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-surface-hover text-text-secondary hover:bg-surface transition-all cursor-pointer"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />

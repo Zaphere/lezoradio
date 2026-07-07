@@ -34,7 +34,7 @@ export default function BroadcastTimeline({
   const atLive = isFollowingLive && currentIndex >= items.length - 1;
 
   return (
-    <div className="glass rounded-2xl p-4 space-y-3">
+    <div className="card p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
           Broadcast Timeline
@@ -71,8 +71,8 @@ export default function BroadcastTimeline({
                 isActive
                   ? 'bg-primary/20 border-primary/50 ring-1 ring-primary/30'
                   : isPast
-                    ? 'bg-white/[0.03] border-border/30 opacity-60'
-                    : 'bg-white/5 border-border/50 hover:bg-white/10'
+                    ? 'bg-surface-subtle border-border/30 opacity-60'
+                    : 'bg-surface border-border/50 hover:bg-surface-hover'
               }`}
             >
               <p className="text-[10px] text-text-secondary capitalize mb-1">
@@ -91,7 +91,7 @@ export default function BroadcastTimeline({
           className={`snap-center shrink-0 w-20 flex flex-col items-center justify-center rounded-xl border transition-all cursor-pointer ${
             atLive
               ? 'bg-red-500/20 border-red-500/50'
-              : 'bg-white/5 border-border/50 hover:bg-red-500/10 hover:border-red-500/30'
+              : 'bg-surface border-border/50 hover:bg-red-500/10 hover:border-red-500/30'
           }`}
         >
           <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse mb-1" />

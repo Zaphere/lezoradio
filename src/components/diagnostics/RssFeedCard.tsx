@@ -20,7 +20,7 @@ const healthDots: Record<string, string> = {
 
 export default function RssFeedCard({ result }: Props) {
   return (
-    <div className="rounded-xl bg-white/5 p-3 space-y-1.5">
+    <div className="rounded-xl bg-surface p-3 space-y-1.5">
       <div className="flex items-center gap-2">
         <span className={`text-sm ${healthColors[result.health]}`}>
           {healthDots[result.health]}

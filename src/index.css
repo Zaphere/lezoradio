@@ -12,8 +12,10 @@
   --color-surface-light: rgba(0, 0, 0, 0.03);
   --color-surface-hover: rgba(255, 255, 255, 0.1);
   --color-surface-hover-light: rgba(0, 0, 0, 0.06);
+  --color-surface-subtle: rgba(255, 255, 255, 0.03);
+  --color-surface-subtle-light: rgba(0, 0, 0, 0.015);
   --color-border: rgba(255, 255, 255, 0.1);
-  --color-border-light: rgba(0, 0, 0, 0.1);
+  --color-border-light: rgba(0, 0, 0, 0.08);
   --color-text-primary: #F1F5F9;
   --color-text-primary-light: #1F2937;
   --color-text-secondary: #94A3B8;
@@ -30,8 +32,15 @@
   }
 
   body.light-mode {
-    background-color: var(--color-bg-primary-light);
-    color: var(--color-text-primary-light);
+    --color-bg-primary: #FFFFFF;
+    --color-surface: rgba(0, 0, 0, 0.04);
+    --color-surface-hover: rgba(0, 0, 0, 0.08);
+    --color-surface-subtle: rgba(0, 0, 0, 0.02);
+    --color-border: rgba(0, 0, 0, 0.1);
+    --color-text-primary: #1F2937;
+    --color-text-secondary: #6B7280;
+    background-color: #FFFFFF;
+    color: #1F2937;
   }
 
   ::-webkit-scrollbar {
@@ -41,10 +50,9 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.12);
     border-radius: 3px;
   }
-
   body.light-mode ::-webkit-scrollbar-thumb {
     background: rgba(0, 0, 0, 0.1);
   }
@@ -54,11 +62,13 @@
   background: var(--color-surface);
   backdrop-filter: blur(16px);
   border: 1px solid var(--color-border);
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 body.light-mode .glass {
-  background: var(--color-surface-light);
-  border: 1px solid var(--color-border-light);
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 @utility glass-hover {
@@ -68,8 +78,33 @@ body.light-mode .glass {
 }
 
 body.light-mode .glass-hover {
-  background: var(--color-surface-hover-light);
-  border: 1px solid var(--color-border-light);
+  background: #FAFAFA;
+  border: 1px solid #E5E7EB;
+}
+
+@utility card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  transition: box-shadow 0.2s ease, transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+
+body.light-mode .card {
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+@media (hover: hover) {
+  .card-hoverable:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.08);
+    transform: translateY(-2px);
+    border-color: var(--color-primary);
+  }
+
+  body.light-mode .card-hoverable:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  }
 }
 
 @utility neon-pulse {

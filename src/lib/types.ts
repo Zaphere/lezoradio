@@ -9,6 +9,9 @@ export interface NewsItem {
   url: string;
   region: string;
   category: NewsCategory;
+  priority?: number;
+  city?: string;
+  province?: string;
   published_at: string;
   ingested_at: string;
   is_processed: boolean;
@@ -90,6 +93,7 @@ export interface StationRecord {
   is_active: boolean;
   priority: number;
   image_url?: string;
+  timezone?: string;
   created_at: string;
   updated_at: string;
 }
@@ -199,4 +203,112 @@ export interface BroadcastScript {
 
 export interface IScriptGenerator {
   generate(items: BroadcastItem[]): Promise<BroadcastScript>;
+}
+
+export type BroadcastMode = 'LIVE_NEWS' | 'MUSIC_FILL' | 'GLOBAL_BULLETIN' | 'EMERGENCY';
+
+export interface StationTimeInfo {
+  timezone: string;
+  localTime: Date;
+  localHour: number;
+  localMinute: number;
+  timeString: string;
+  dateString: string;
+}
+
+export interface FrenchBulletinSlot {
+  hour: number;
+  minute: number;
+  label: string;
+}
+
+export interface NextSegment {
+  type: string;
+  time: string;
+  label: string;
+}
+
+export type BroadcastStateValue =
+  | 'IDLE'
+  | 'INTRO_MUSIC'
+  | 'INTRO_DUCKING'
+  | 'HOST_INTRO'
+  | 'NEWS_SEGMENT'
+  | 'TRANSITION'
+  | 'ENTERTAINMENT'
+  | 'STOPPING';
+
+export interface PersistedBroadcastState {
+  stationId: string;
+  stationName: string;
+  stationRegion: string;
+  state: BroadcastStateValue;
+  currentIndex: number;
+  playedIds: string[];
+  playlist: SerializedNewsItem[];
+  timestamp: number;
+  voiceRate: number;
+  voiceVolume: number;
+}
+
+export interface SerializedNewsItem {
+  id: string;
+  title: string;
+  description: string;
+  content: string;
+  url: string;
+  region: string;
+  category: NewsCategory;
+  ingested_at: string;
+}
+
+// ============================================================================
+// Generic Provider Framework Types
+// ============================================================================
+
+export interface UnifiedEvent {
+  id: string;
+  provider: string;
+  provider_record_id: string;
+  category: string;
+  subcategory?: string;
+  priority: number;
+  title: string;
+  summary?: string;
+  description?: string;
+  country: string;
+  province?: string;
+  city?: string;
+  latitude?: number;
+  longitude?: number;
+  status: string;
+  verified: boolean;
+  language: string;
+  metadata?: Record<string, any>;
+  raw_payload?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProviderHealth {
+  provider: string;
+  healthy: boolean;
+  enabled: boolean;
+  authenticated?: boolean;
+  initialized?: boolean;
+  last_sync?: string;
+  last_sync_status?: string;
+  items_ingested?: number;
+  error_count?: number;
+  latency_ms?: number;
+  token_status?: {
+    hasAccessToken: boolean;
+    hasRefreshToken: boolean;
+    isExpired: boolean;
+    isExpiring: boolean;
+    timeUntilExpiry?: number;
+    tokenExpiry?: string;
+  };
+  enabled_endpoints?: string[];
+  last_sync_times?: Record<string, string>;
 }

@@ -15,7 +15,7 @@ export default function VolumeControl({ volume, onChange }: Props) {
         max="100"
         value={Math.round(volume * 100)}
         onChange={(e) => onChange(parseInt(e.target.value) / 100)}
-        className="w-16 h-1 rounded-full appearance-none bg-white/10 cursor-pointer
+         className="w-16 h-1 rounded-full appearance-none bg-surface-hover cursor-pointer
                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 
                    [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full 
                    [&::-webkit-slider-thumb]:bg-primary"

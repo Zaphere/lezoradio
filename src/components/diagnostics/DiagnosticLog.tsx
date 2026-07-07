@@ -42,7 +42,7 @@ export default function DiagnosticLog({ summary }: Props) {
   lines.push(`${'-'.repeat(40)}`);
 
   return (
-    <div className="glass rounded-2xl p-4">
+    <div className="card p-4">
       <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">Console Log</h4>
       <pre
         ref={preRef}

@@ -42,15 +42,20 @@ const _silentFetch = async <T>(fn: () => any): Promise<T[]> => {
 };
 
 export async function fetchNewsItems(region?: string, category?: string): Promise<any[]> {
+  const NEWS_CATEGORIES = ['news', 'global', 'regional', 'local', 'traffic', 'alert', 'weather', 'agriculture', 'business', 'sports'];
+
   const events = await _silentFetch(async () => {
     let q = supabase.from('events').select('*').gte('created_at', retentionCutoff()).order('created_at', { ascending: false }).limit(50);
     if (region) q = q.eq('province', region);
-    if (category) q = q.eq('category', category);
+    if (category) {
+      q = q.eq('category', category);
+    } else {
+      q = q.in('category', NEWS_CATEGORIES);
+    }
     return q;
   });
 
-  // Map events table structure to NewsItem interface
-  return events.map((event: any) => ({
+  const mapped = events.map((event: any) => ({
     id: event.id,
     feed_id: event.provider,
     title: event.title,
@@ -59,10 +64,58 @@ export async function fetchNewsItems(region?: string, category?: string): Promis
     url: event.metadata?.url || '',
     region: event.province || event.country || 'global',
     category: event.category || 'global',
+    priority: event.priority,
+    city: event.city || event.metadata?.city,
+    province: event.province,
     published_at: event.occurred_at || event.created_at,
     ingested_at: event.created_at,
     is_processed: event.status !== 'active',
   }));
+
+  // Also fetch from legacy news_items table and merge
+  const newsItems = await _silentFetch(async () => {
+    let q = supabase.from('news_items').select('*').gte('ingested_at', retentionCutoff()).order('ingested_at', { ascending: false }).limit(50);
+    if (region) {
+      const drcRegion = getRegionBySlug(region);
+      if (drcRegion) {
+        q = q.in('region', [region, 'congo']);
+      } else {
+        q = q.eq('region', region);
+      }
+    }
+    if (category) q = q.eq('category', category);
+    return q;
+  });
+
+  const mappedNews = newsItems.map((item: any) => ({
+    id: item.id,
+    feed_id: item.feed_id,
+    title: item.title,
+    description: item.description || '',
+    content: item.content || '',
+    url: item.url || '',
+    region: item.region || 'global',
+    category: item.category || 'global',
+    published_at: item.published_at || item.ingested_at,
+    ingested_at: item.ingested_at,
+    is_processed: item.is_processed || false,
+  }));
+
+  // Merge: prefer news_items over events (dedup by title)
+  const seen = new Set<string>();
+  const merged = [...mappedNews];
+  for (const item of merged) seen.add(item.title?.substring(0, 100) || item.id);
+  for (const item of mapped) {
+    const key = item.title?.substring(0, 100) || item.id;
+    if (!seen.has(key)) {
+      merged.push(item);
+      seen.add(key);
+    }
+  }
+
+  return merged.sort(
+    (a, b) => new Date(b.ingested_at).getTime() - new Date(a.ingested_at).getTime(),
+  );
 }
 
 export async function fetchRadioScripts(region?: string, category?: string): Promise<any[]> {

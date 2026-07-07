@@ -1,5 +1,21 @@
 import type { BroadcastItem } from '../../lib/types';
 
+// Priority constants (1 = highest, 10 = lowest)
+export const PRIORITY = {
+  INSTITUTIONAL_ALERT: 1,
+  FATAL_ACCIDENT: 2,
+  MAJOR_INCIDENT: 3,
+  SEVERE_INCIDENT: 4,
+  HEAVY_TRAFFIC: 5,
+  ROAD_WORK: 6,
+  TRANSPORT_UPDATE: 7,
+  REGULAR_NEWS: 6,
+  WEATHER_ALERT: 3,
+  EMERGENCY: 2,
+  DEFAULT: 6,
+  LOW_PRIORITY: 10,
+} as const;
+
 export class BroadcastQueue {
   private _items: BroadcastItem[] = [];
 

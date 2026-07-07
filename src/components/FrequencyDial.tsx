@@ -5,11 +5,13 @@ import { playDialClick } from '../lib/audio';
 interface Props {
   frequency: string;
   isActive: boolean;
+  tunerSoundEnabled?: boolean;
   onChange?: (freq: string) => void;
 }
 
 const TICK_COUNT = 24;
 const KNOB_SIZE = 160;
+const DEBOUNCE_MS = 200;
 
 const FREQ_RANGE = MAX_FREQ - MIN_FREQ;
 const ANGLE_RANGE = 300;
@@ -19,23 +21,49 @@ function freqToAngle(f: number): number {
   return -ANGLE_RANGE / 2 + ratio * ANGLE_RANGE;
 }
 
-export default function FrequencyDial({ frequency, isActive, onChange }: Props) {
+function freqToRatio(f: number): number {
+  return (f - MIN_FREQ) / FREQ_RANGE;
+}
+
+function describeArc(cx: number, cy: number, r: number, startAngle: number, endAngle: number): string {
+  const start = {
+    x: cx + r * Math.cos((startAngle * Math.PI) / 180),
+    y: cy + r * Math.sin((startAngle * Math.PI) / 180),
+  };
+  const end = {
+    x: cx + r * Math.cos((endAngle * Math.PI) / 180),
+    y: cy + r * Math.sin((endAngle * Math.PI) / 180),
+  };
+  const largeArc = Math.abs(endAngle - startAngle) > 180 ? 1 : 0;
+  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 0 ${end.x} ${end.y}`;
+}
+
+export default function FrequencyDial({ frequency, isActive, tunerSoundEnabled = false, onChange }: Props) {
   const knobRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragFreq, setDragFreq] = useState(parseFloat(frequency));
   const [snapping, setSnapping] = useState(false);
+  const [hover, setHover] = useState(false);
 
   const dragState = useRef<{ startAngle: number; startFreq: number } | null>(null);
   const currentFreqRef = useRef(parseFloat(frequency));
+  const dragFreqRef = useRef(dragFreq);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSnappedRef = useRef<string>(frequency);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   useEffect(() => {
     if (!isDragging) {
-      currentFreqRef.current = parseFloat(frequency);
-      setDragFreq(parseFloat(frequency));
+      const snapped = snapFrequency(parseFloat(frequency));
+      currentFreqRef.current = parseFloat(snapped);
+      lastSnappedRef.current = snapped;
+      setDragFreq(currentFreqRef.current);
     }
   }, [frequency, isDragging]);
 
   const angle = freqToAngle(isDragging ? dragFreq : currentFreqRef.current);
+  const ratio = freqToRatio(isDragging ? dragFreq : currentFreqRef.current);
 
   const handleStart = useCallback((clientX: number, clientY: number) => {
     const el = knobRef.current;
@@ -63,21 +91,36 @@ export default function FrequencyDial({ frequency, isActive, onChange }: Props) 
 
     const raw = dragState.current.startFreq + (delta / ANGLE_RANGE) * FREQ_RANGE;
     const clamped = Math.min(MAX_FREQ, Math.max(MIN_FREQ, raw));
-    setDragFreq(clamped);
+    const snapped = snapFrequency(clamped);
+    dragFreqRef.current = parseFloat(snapped);
+    setDragFreq(dragFreqRef.current);
+
+    if (snapped !== lastSnappedRef.current) {
+      lastSnappedRef.current = snapped;
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = setTimeout(() => {
+        onChangeRef.current?.(snapped);
+      }, DEBOUNCE_MS);
+    }
   }, []);
 
   const handleEnd = useCallback(() => {
     if (!dragState.current) return;
     setIsDragging(false);
     setSnapping(true);
-    const snapped = snapFrequency(dragFreq);
-    playDialClick();
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    const snapped = snapFrequency(dragFreqRef.current);
+    if (tunerSoundEnabled) playDialClick();
     currentFreqRef.current = parseFloat(snapped);
+    lastSnappedRef.current = snapped;
     setDragFreq(currentFreqRef.current);
-    onChange?.(snapped);
+    onChangeRef.current?.(snapped);
     setTimeout(() => setSnapping(false), 200);
     dragState.current = null;
-  }, [dragFreq, onChange]);
+  }, [tunerSoundEnabled]);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -116,21 +159,34 @@ export default function FrequencyDial({ frequency, isActive, onChange }: Props) 
   const channel = CHANNELS.find(c => c.frequency === displayFreq);
 
   return (
-    <div className="flex flex-col items-center select-none">
+    <div className="flex flex-col items-center select-none touch-none"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
       <div
         ref={knobRef}
         className="relative"
         style={{ width: KNOB_SIZE, height: KNOB_SIZE }}
       >
+        {/* Frequency indicator arc — rotates with dial */}
+        <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 160 160">
+          <path
+            d={describeArc(80, 80, 74, -150 + ratio * 300 - 15, -150 + ratio * 300 + 15)}
+            fill="none"
+            stroke="var(--color-primary)"
+            strokeWidth="3"
+            strokeLinecap="round"
+            opacity={isActive ? 0.8 : 0.12}
+            className="transition-all duration-300 ease-out"
+          />
+        </svg>
+
         {/* Outer ring with tick marks */}
-        <svg
-          className="absolute inset-0 w-full h-full"
-          viewBox="0 0 160 160"
-        >
+        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 160 160">
           {Array.from({ length: TICK_COUNT }, (_, i) => {
             const tickAngle = (i / TICK_COUNT) * 360 - 90;
             const outerR = 76;
-            const innerR = i % 4 === 0 ? 68 : 72;
+            const innerR = i % 4 === 0 ? 66 : 71;
             const x1 = 80 + outerR * Math.cos((tickAngle * Math.PI) / 180);
             const y1 = 80 + outerR * Math.sin((tickAngle * Math.PI) / 180);
             const x2 = 80 + innerR * Math.cos((tickAngle * Math.PI) / 180);
@@ -139,9 +195,9 @@ export default function FrequencyDial({ frequency, isActive, onChange }: Props) 
               <line
                 key={i}
                 x1={x1} y1={y1} x2={x2} y2={y2}
-                stroke={isActive ? 'hsl(var(--primary))' : 'hsl(var(--border))'}
+                className={isActive ? 'stroke-primary' : 'stroke-border'}
                 strokeWidth={i % 4 === 0 ? 2 : 1}
-                opacity={i % 4 === 0 ? 0.8 : 0.4}
+                opacity={i % 4 === 0 ? 0.8 : 0.35}
                 style={{ transition: 'stroke 0.3s' }}
               />
             );
@@ -150,20 +206,22 @@ export default function FrequencyDial({ frequency, isActive, onChange }: Props) 
 
         {/* Knob body */}
         <div
-          className={`absolute rounded-full cursor-grab active:cursor-grabbing transition-shadow ${
-            isDragging ? 'shadow-xl' : 'shadow-lg'
+          className={`absolute rounded-full cursor-grab active:cursor-grabbing ${
+            isDragging ? 'shadow-xl shadow-black/30' : hover ? 'shadow-lg shadow-black/25' : 'shadow-md shadow-black/20'
           }`}
           style={{
-            width: 110,
-            height: 110,
-            left: 25,
-            top: 25,
+            width: 100,
+            height: 100,
+            left: 30,
+            top: 30,
             background: isActive
-              ? 'radial-gradient(circle at 40% 35%, hsl(var(--primary)/0.15), hsl(var(--surface)) 70%)'
-              : 'radial-gradient(circle at 40% 35%, hsl(var(--surface-light)), hsl(var(--surface)))',
-            border: `2px solid ${isActive ? 'hsl(var(--primary)/0.4)' : 'hsl(var(--border))'}`,
+              ? 'color-mix(in srgb, var(--color-primary) 12%, transparent)'
+              : 'var(--color-surface)',
+            border: `2px solid ${isActive ? 'var(--color-primary)' : 'var(--color-border)'}`,
             transform: `rotate(${angle}deg)`,
-            transition: snapping ? 'transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)' : 'none',
+            transition: snapping
+              ? 'transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease'
+              : 'box-shadow 0.2s ease',
           }}
           onMouseDown={onMouseDown}
           onTouchStart={(e) => {
@@ -175,10 +233,10 @@ export default function FrequencyDial({ frequency, isActive, onChange }: Props) 
           <div
             className="absolute left-1/2 top-0 w-0.5 rounded-full"
             style={{
-              height: '40%',
+              height: '42%',
               background: isActive
-                ? 'linear-gradient(to bottom, hsl(var(--primary)), transparent)'
-                : 'linear-gradient(to bottom, hsl(var(--text-secondary)/0.5), transparent)',
+                ? 'linear-gradient(to bottom, var(--color-primary), transparent)'
+                : 'linear-gradient(to bottom, var(--color-text-secondary), transparent)',
               transform: 'translateX(-50%)',
               transition: 'background 0.3s',
             }}
@@ -187,7 +245,8 @@ export default function FrequencyDial({ frequency, isActive, onChange }: Props) 
           <div
             className="absolute w-3 h-3 rounded-full top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
             style={{
-              background: isActive ? 'hsl(var(--primary))' : 'hsl(var(--text-secondary)/0.3)',
+              background: isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+              opacity: isActive ? 1 : 0.3,
               transition: 'background 0.3s',
             }}
           />
@@ -199,42 +258,27 @@ export default function FrequencyDial({ frequency, isActive, onChange }: Props) 
           style={{ zIndex: 10 }}
         >
           <div
-            className={`text-3xl font-bold font-mono transition-colors ${
+            className={`text-3xl font-bold font-mono tracking-tight transition-colors ${
               isActive ? 'text-primary' : 'text-text-secondary'
             }`}
           >
             {displayFreq}
           </div>
-          <div className="text-xs text-text-secondary mt-0.5">FM</div>
+          <div className="text-xs text-text-secondary mt-0.5 font-medium">FM</div>
         </div>
-
-        {/* Active glow */}
-        {isActive && (
-          <div
-            className="absolute rounded-full animate-pulse"
-            style={{
-              top: -4, left: -4, right: -4, bottom: -4,
-              border: '2px solid hsl(var(--primary)/0.15)',
-              pointerEvents: 'none',
-            }}
-          />
-        )}
       </div>
 
-      {/* Channel name below dial */}
-      <div className="mt-3 text-center min-h-[2.5rem]">
+      {/* Channel name below dial — clean text only, no emoji here */}
+      <div className="mt-4 text-center min-h-[2rem]">
         {channel ? (
-          <>
-            <div className="text-2xl">{channel.emoji}</div>
-            <div className={`text-sm font-semibold mt-1 transition-colors ${
-              isActive ? 'text-text-primary' : 'text-text-secondary'
-            }`}>
-              {channel.name}
-            </div>
-          </>
+          <div className={`text-sm font-semibold transition-colors ${
+            isActive ? 'text-text-primary' : 'text-text-secondary'
+          }`}>
+            {channel.name}
+          </div>
         ) : (
-          <div className="text-xs text-text-secondary mt-1">
-            {isDragging ? 'Keep tuning...' : '--'}
+          <div className="text-xs text-text-secondary">
+            {isDragging ? 'Tuning...' : '--'}
           </div>
         )}
       </div>

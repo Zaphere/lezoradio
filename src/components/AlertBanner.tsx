@@ -17,7 +17,7 @@ export default function AlertBanner({ alert }: Props) {
   const colors = severityColors[alert.severity] || severityColors.high;
 
   return (
-    <div className={`rounded-2xl border p-4 animate-slide-up ${colors}`}>
+    <div className={`rounded-2xl border p-4 animate-slide-up shadow-sm ${colors}`}>
       <div className="flex items-start gap-3">
         <span className="text-lg mt-0.5">🚨</span>
         <div className="flex-1">

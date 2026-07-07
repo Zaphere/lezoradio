@@ -44,7 +44,7 @@ export default function TranscriptDisplay({ text, isPlaying, onComplete }: Props
   }, [displayedText, text, isPlaying]);
 
   return (
-    <div className="glass rounded-2xl p-4 h-64 overflow-hidden">
+    <div className="card p-4 h-64 overflow-hidden">
       <div className="flex items-center justify-between mb-3">
         <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
           Live Transcript

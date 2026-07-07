@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import type { RadioScript, Alert, QueueItem, BroadcastItem, VoiceOption, NewsItem, NewsCategory } from '../lib/types';
+import type { RadioScript, Alert, QueueItem, BroadcastItem, VoiceOption, NewsItem, NewsCategory, BroadcastStateValue } from '../lib/types';
 import { TRANSITIONS } from '../lib/types';
-import { fetchRadioScripts, fetchAlerts, isDatabaseReady, markScriptAsRead, markNewsItemProcessed } from '../lib/supabase';
-import { newsItemToSpeech } from '../lib/newsText';
+import { fetchRadioScripts, fetchAlerts, isDatabaseReady, markScriptAsRead, markNewsItemProcessed, fetchNewsItems } from '../lib/supabase';
+import { newsItemToSpeech, isLezoTrafficItem, lezoTrafficItemToSpeech, lezoTrafficSegmentIntro } from '../lib/newsText';
 import {
   loadBroadcastProgress,
   markItemPlayed,
@@ -87,6 +87,14 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
   const awaitingEntertainmentRef = useRef(false);
   const entertainmentIndexRef = useRef(0);
   const entertainmentPhaseRef = useRef<EntertainmentPhase>('track');
+  const playbackLockRef = useRef(false);
+  const [isPlaybackLocked, setIsPlaybackLocked] = useState(false);
+
+  const setPlaybackLock = useCallback((val: boolean) => {
+    playbackLockRef.current = val;
+    setIsPlaybackLocked(val);
+  }, []);
+
 
   const [playlist, setPlaylist] = useState<NewsItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
@@ -119,6 +127,8 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
   isMusicModeRef.current = isMusicMode;
 
   const onVoiceEnded = useCallback(() => {
+    setPlaybackLock(false);
+
     if (awaitingEntertainmentRef.current) {
       awaitingEntertainmentRef.current = false;
       startEntertainmentRef.current();
@@ -137,8 +147,18 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
   }, []);
 
   const voice = useVoiceEngine(onVoiceEnded);
-  const voiceStateRef = useRef(voice.state);
-  voiceStateRef.current = voice.state;
+  const {
+    speak: voiceSpeak,
+    stop: voiceStop,
+    activate: voiceActivate,
+    setRate: voiceSetRate,
+    setVolume: voiceSetVolume,
+    setVoice: voiceSetVoice,
+  } = voice;
+  const voiceState = voice.state;
+
+  const voiceStateRef = useRef(voiceState);
+  voiceStateRef.current = voiceState;
 
   const clearFallbackTimer = useCallback(() => {
     if (fallbackTimerRef.current) {
@@ -160,10 +180,10 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
       if (!isLiveRef.current) return;
       if (isMusicModeRef.current) return;
       awaitingEntertainmentRef.current = true;
-      voice.stop();
+      voiceStop();
       clearSegmentTimer();
     }, BROADCAST_SEGMENT_MS);
-  }, [voice, clearSegmentTimer]);
+  }, [voiceStop, clearSegmentTimer]);
 
   const stopMusic = useCallback(() => {
     trackRef.current?.stop();
@@ -188,10 +208,10 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
       entertainmentPhaseRef.current = 'after-track';
       setEntertainmentTrack(null);
       setTimeout(() => {
-        voice.speak(commentaryAfterTrack(track, stationName));
+        voiceSpeak(commentaryAfterTrack(track, stationName));
       }, PRE_TRACK_SPEECH_GAP_MS);
     });
-  }, [stationName, voice]);
+  }, [stationName, voiceSpeak]);
 
   const endEntertainmentSegment = useCallback(async () => {
     entertainmentActiveRef.current = false;
@@ -215,12 +235,12 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
       if (nextIndex < ENTERTAINMENT_TRACKS.length) {
         entertainmentPhaseRef.current = 'before-track';
         setTimeout(() => {
-          voice.speak(introBeforeTrack(ENTERTAINMENT_TRACKS[nextIndex], stationName));
+          voiceSpeak(introBeforeTrack(ENTERTAINMENT_TRACKS[nextIndex], stationName));
         }, PRE_TRACK_SPEECH_GAP_MS);
       } else {
         entertainmentPhaseRef.current = 'closing';
         setTimeout(() => {
-          voice.speak(entertainmentSegmentClose(stationName));
+          voiceSpeak(entertainmentSegmentClose(stationName));
         }, PRE_TRACK_SPEECH_GAP_MS);
       }
       return;
@@ -235,7 +255,7 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
     if (phase === 'closing') {
       void endEntertainmentSegment();
     }
-  }, [stationName, voice, playEntertainmentTrack, endEntertainmentSegment]);
+  }, [stationName, voiceSpeak, playEntertainmentTrack, endEntertainmentSegment]);
 
   const startEntertainmentSegment = useCallback(() => {
     clearSegmentTimer();
@@ -262,14 +282,14 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
       if (!isLiveRef.current) return;
       if (isMusicModeRef.current) return;
       if (hasUnplayedItems(playlistRef.current, playedIdsRef.current)) return;
-      if (voice.state !== 'idle' || isIntroActiveRef.current) return;
+      if (voiceState !== 'idle' || isIntroActiveRef.current) return;
 
       setIsMusicMode(true);
       isMusicModeRef.current = true;
       awaitingEntertainmentRef.current = true;
-      voice.speak(FALLBACK_MESSAGE);
+      voiceSpeak(FALLBACK_MESSAGE);
     }, ENTERTAINMENT_DELAY);
-  }, [voice, clearFallbackTimer]);
+  }, [voiceState, voiceSpeak, clearFallbackTimer]);
 
   scheduleEntertainmentRef.current = scheduleEntertainmentIfIdle;
 
@@ -280,22 +300,26 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
       introRef.current = new IntroAudio();
     }
     pendingSpeechRef.current = speakFn;
-    voice.activate('Starting broadcast…');
+    voiceActivate('Starting broadcast…');
     introRef.current.play(() => {
       pendingSpeechRef.current = null;
       speakFn();
     });
-  }, [stopMusic, clearFallbackTimer, voice]);
+  }, [stopMusic, clearFallbackTimer, voiceActivate]);
 
-  const playItemAt = useCallback((index: number, options?: { withIntro?: boolean; stationIntro?: boolean }) => {
+  const playItemAt = useCallback((index: number, options?: { withIntro?: boolean; stationIntro?: boolean; force?: boolean }) => {
+    if (playbackLockRef.current) return;
+
     const items = playlistRef.current;
     if (index < 0 || index >= items.length) return;
 
     const item = items[index];
-    if (playedIdsRef.current.has(item.id)) {
+    if (playedIdsRef.current.has(item.id) && !options?.force) {
       tryPlayNextUnplayedRef.current(index, options);
       return;
     }
+
+    setPlaybackLock(true);
 
     stopMusic();
     clearFallbackTimer();
@@ -308,16 +332,19 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
     playedIdsRef.current = markItemPlayed(stationId, newsCategory, item.id, playedIdsRef.current, index);
     setPlayedIds(new Set(playedIdsRef.current));
 
-    const text = newsItemToSpeech(item);
+    const isLezo = isLezoTrafficItem(item);
+    const text = isLezo ? lezoTrafficItemToSpeech(item) : newsItemToSpeech(item);
     const isFirst = !!(options?.stationIntro);
     const transition = isFirst
       ? `Now broadcasting from ${stationName}.`
-      : TRANSITIONS[Math.floor(Math.random() * TRANSITIONS.length)];
+      : isLezo
+        ? lezoTrafficSegmentIntro(item, stationName)
+        : TRANSITIONS[Math.floor(Math.random() * TRANSITIONS.length)];
 
     const speak = () => {
       isIntroActiveRef.current = false;
       setIsIntroActive(false);
-      voice.speak(text, transition);
+      voiceSpeak(text, transition);
       scheduleSegmentEnd();
     };
 
@@ -329,7 +356,7 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
       stopIntro();
       speak();
     }
-  }, [stationId, stationName, newsCategory, voice, playWithIntro, stopIntro, stopMusic, clearFallbackTimer, scheduleSegmentEnd]);
+  }, [stationId, stationName, newsCategory, voiceSpeak, playWithIntro, stopIntro, stopMusic, clearFallbackTimer, scheduleSegmentEnd]);
 
   const tryPlayNextUnplayed = useCallback((
     fromIndex: number,
@@ -367,11 +394,36 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
       return true;
     });
 
-    const sorted = sortPlaylistOldestFirst(unique);
+    const lezoItems = unique.filter(item => isLezoTrafficItem(item));
+    const otherItems = unique.filter(item => !isLezoTrafficItem(item));
+
+    const sortedLezo = sortPlaylistOldestFirst(lezoItems);
+    const sortedOther = sortPlaylistOldestFirst(otherItems);
+
+    const sorted = [...sortedLezo, ...sortedOther];
     playlistRef.current = sorted;
     setPlaylist(sorted);
 
     if (!isLiveRef.current) return;
+
+    const currentItem = currentIndexRef.current >= 0 && currentIndexRef.current < playlistRef.current.length
+      ? playlistRef.current[currentIndexRef.current]
+      : null;
+
+    const hasNewLezo = sortedLezo.some(item => !playedIdsRef.current.has(item.id));
+    const isCurrentlyLezo = currentItem && isLezoTrafficItem(currentItem);
+
+    if (hasNewLezo && !isCurrentlyLezo && voiceStateRef.current === 'speaking' && !isIntroActiveRef.current) {
+      voiceStop();
+      stopMusic();
+      stopIntro();
+      clearFallbackTimer();
+      let nextIdx = findFirstUnplayedIndex(sorted, playedIdsRef.current);
+      if (nextIdx >= 0) {
+        playItemAt(nextIdx);
+      }
+      return;
+    }
 
     if (voiceStateRef.current !== 'idle' || isIntroActiveRef.current) return;
 
@@ -388,7 +440,7 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
       clearFallbackTimer();
       playItemAt(nextIdx);
     }
-  }, [playItemAt, stopMusic, clearFallbackTimer]);
+  }, [playItemAt, stopMusic, clearFallbackTimer, voiceStop, stopIntro]);
 
   const startNewsPlaylist = useCallback((items: NewsItem[], withIntro = false) => {
     playlistRef.current = sortPlaylistOldestFirst(items);
@@ -397,14 +449,14 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
   }, [beginFromNextUnplayed]);
 
   const skipNext = useCallback(() => {
-    voice.stop();
+    voiceStop();
     stopIntro();
     isIntroActiveRef.current = false;
     setIsIntroActive(false);
     if (!tryPlayNextUnplayed(currentIndexRef.current)) {
       scheduleEntertainmentIfIdle();
     }
-  }, [voice, stopIntro, tryPlayNextUnplayed, scheduleEntertainmentIfIdle]);
+  }, [voiceStop, stopIntro, tryPlayNextUnplayed, scheduleEntertainmentIfIdle]);
 
   const skipIntro = useCallback(() => {
     const pending = pendingSpeechRef.current;
@@ -417,6 +469,7 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
   const goLive = useCallback(() => {
     const items = playlistRef.current;
     if (items.length === 0) return;
+    setPlaybackLock(false);
     for (let i = items.length - 1; i >= 0; i--) {
       if (!playedIdsRef.current.has(items[i].id)) {
         playItemAt(i);
@@ -429,11 +482,12 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
   const jumpToIndex = useCallback((index: number) => {
     const items = playlistRef.current;
     if (index < 0 || index >= items.length) return;
-    voice.stop();
+    setPlaybackLock(false);
+    voiceStop();
     stopIntro();
     stopMusic();
-    playItemAt(index);
-  }, [voice, stopIntro, stopMusic, playItemAt]);
+    playItemAt(index, { force: true });
+  }, [voiceStop, stopIntro, stopMusic, playItemAt]);
 
   useEffect(() => {
     const items = playlist;
@@ -473,36 +527,36 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
     markScriptAsRead(item.script.id);
 
     const intro = `Now broadcasting from ${stationName}.`;
-    const speak = () => voice.speak(item.script.script, intro);
+    const speak = () => voiceSpeak(item.script.script, intro);
     if (withIntro) {
       playWithIntro(speak);
     } else {
       speak();
     }
-  }, [stationName, voice, playWithIntro]);
+  }, [stationName, voiceSpeak, playWithIntro]);
 
   const processAlerts = useCallback(async () => {
     try {
       const alerts = await fetchAlerts();
       if (alerts.length > 0) {
         const top = alerts[0] as Alert;
-        voice.stop();
+        voiceStop();
         stopMusic();
         stopIntro();
         clearFallbackTimer();
         setActiveAlert(top);
-        voice.speak(`BREAKING NEWS ALERT: ${top.title}. ${top.message}`);
+        voiceSpeak(`BREAKING NEWS ALERT: ${top.title}. ${top.message}`);
         setTimeout(() => setActiveAlert(null), 5000);
       }
     } catch (err) {
       console.warn('[RadioEngine] Failed to process alerts:', err);
     }
-  }, [voice, stopMusic, stopIntro, clearFallbackTimer]);
+  }, [voiceStop, voiceSpeak, stopMusic, stopIntro, clearFallbackTimer]);
 
   const processQueue = useCallback(async () => {
     try {
       if (playlistRef.current.length > 0) {
-        if (isLiveRef.current && voice.state === 'idle' && !isIntroActiveRef.current) {
+        if (isLiveRef.current && voiceState === 'idle' && !isIntroActiveRef.current && !playbackLockRef.current) {
           if (!tryPlayNextUnplayed(currentIndexRef.current)) {
             scheduleEntertainmentIfIdle();
           }
@@ -513,7 +567,7 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
       const scripts = await fetchRadioScripts(stationRegion || undefined, newsCategory);
       const items = scriptsToItems(scripts as RadioScript[]);
       if (items.length === 0) {
-        if (isLiveRef.current && voice.state === 'idle') {
+        if (isLiveRef.current && voiceState === 'idle' && !playbackLockRef.current) {
           scheduleEntertainmentIfIdle();
         }
         return;
@@ -524,7 +578,7 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
 
       const existingIds = new Set(queueRef.current.map((q) => q.script.id));
       for (const item of items) {
-        if (!existingIds.has(item.script.id)) {
+        if (!existingIds.has(item.script.id) && !playedIdsRef.current.has(item.script.id)) {
           queueRef.current.push(item);
           existingIds.add(item.script.id);
         }
@@ -533,13 +587,13 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
       setQueue([...queueRef.current]);
       setNextUp(queueRef.current.slice(0, 3));
 
-      if (voice.state === 'idle' && queueRef.current.length > 0) {
+      if (voiceState === 'idle' && queueRef.current.length > 0 && !playbackLockRef.current) {
         playFromQueue();
       }
     } catch (err) {
       console.warn('[RadioEngine] Failed to process queue:', err);
     }
-  }, [scriptsToItems, voice, stationRegion, newsCategory, playFromQueue, stopMusic, clearFallbackTimer, tryPlayNextUnplayed, scheduleEntertainmentIfIdle]);
+  }, [scriptsToItems, voiceState, stationRegion, newsCategory, playFromQueue, stopMusic, clearFallbackTimer, tryPlayNextUnplayed, scheduleEntertainmentIfIdle]);
 
   const tick = useCallback(async () => {
     await processAlerts();
@@ -559,16 +613,33 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
     try {
       const ready = await isDatabaseReady();
       setDbReady(ready);
+
+      let startedPlaying = false;
+      // Refresh news data before attempting playback — fixes immediate music fallback
+      if (playlistRef.current.length === 0) {
+        try {
+          const freshItems = await fetchNewsItems(stationRegion, newsCategory);
+          if (freshItems.length > 0) {
+            startNewsPlaylist(freshItems as NewsItem[], true);
+            startedPlaying = true;
+          }
+        } catch (err) {
+          console.warn('[RadioEngine] Failed to fetch news on start:', err);
+        }
+      }
+
       if (ready) {
         pollingRef.current = setInterval(tick, 15000);
       }
 
-      if (playlistRef.current.length > 0) {
-        beginFromNextUnplayed(true);
-      } else {
-        await tick();
-        if (!beginFromNextUnplayed(false)) {
-          scheduleEntertainmentIfIdle();
+      if (!startedPlaying) {
+        if (playlistRef.current.length > 0) {
+          beginFromNextUnplayed(true);
+        } else {
+          await tick();
+          if (!beginFromNextUnplayed(false)) {
+            scheduleEntertainmentIfIdle();
+          }
         }
       }
     } catch (err) {
@@ -576,9 +647,10 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
       setDbReady(false);
       scheduleEntertainmentIfIdle();
     }
-  }, [tick, beginFromNextUnplayed, scheduleEntertainmentIfIdle, stopMusic, clearFallbackTimer]);
+  }, [tick, beginFromNextUnplayed, scheduleEntertainmentIfIdle, stopMusic, clearFallbackTimer, startNewsPlaylist, stationRegion, newsCategory]);
 
   const stop = useCallback(() => {
+    setPlaybackLock(false);
     if (currentIndexRef.current >= 0) {
       savePlaybackIndex(stationId, newsCategory, currentIndexRef.current);
     }
@@ -588,12 +660,12 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
     stopMusic();
     stopIntro();
     clearFallbackTimer();
-    voice.stop();
+    voiceStop();
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
-  }, [voice, stopMusic, stopIntro, clearFallbackTimer, clearSegmentTimer, stationId, newsCategory]);
+  }, [voiceStop, stopMusic, stopIntro, clearFallbackTimer, clearSegmentTimer, stationId, newsCategory]);
 
   const simulateNews = useCallback((options?: { withIntro?: boolean }) => {
     const text = testData?.newsText || `This is a simulated news broadcast for ${stationName}. In today's headlines, developments continue across the region. Officials report progress on key initiatives. Community leaders respond to recent announcements.`;
@@ -615,14 +687,14 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
     setQueue([...queueRef.current]);
     setNextUp(queueRef.current.slice(0, 3));
 
-    if (voice.state === 'idle') {
+    if (voiceState === 'idle') {
       playFromQueue(options?.withIntro);
     }
-  }, [stationName, testData, voice.state, playFromQueue, stopMusic, clearFallbackTimer]);
+  }, [stationName, testData, voiceState, playFromQueue, stopMusic, clearFallbackTimer]);
 
   const triggerAlert = useCallback(() => {
     const msg = testData?.alertMessage || `This is a test of the emergency alert system. Please stand by for important information.`;
-    voice.stop();
+    voiceStop();
     stopMusic();
     stopIntro();
     clearFallbackTimer();
@@ -635,12 +707,13 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
       is_active: true,
       created_at: new Date().toISOString(),
     });
-    voice.speak(`BREAKING NEWS ALERT: Test Emergency Alert. ${msg}`);
+    voiceSpeak(`BREAKING NEWS ALERT: Test Emergency Alert. ${msg}`);
     setTimeout(() => setActiveAlert(null), 5000);
-  }, [stationName, testData, voice, stopMusic, stopIntro, clearFallbackTimer]);
+  }, [stationName, testData, voiceStop, voiceSpeak, stopMusic, stopIntro, clearFallbackTimer]);
 
   const resetQueue = useCallback(() => {
-    voice.stop();
+    setPlaybackLock(false);
+    voiceStop();
     stopMusic();
     stopIntro();
     clearFallbackTimer();
@@ -653,21 +726,21 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
     currentIndexRef.current = -1;
     setCurrentIndex(-1);
     clearBroadcastProgress(stationId, newsCategory);
-  }, [voice, stopMusic, stopIntro, clearFallbackTimer, stationId, newsCategory]);
+  }, [voiceStop, stopMusic, stopIntro, clearFallbackTimer, stationId, newsCategory]);
 
   const setRate = useCallback((rate: number) => {
-    voice.setRate(rate);
-  }, [voice]);
+    voiceSetRate(rate);
+  }, [voiceSetRate]);
 
   const setVolume = useCallback((volume: number) => {
-    voice.setVolume(volume);
+    voiceSetVolume(volume);
     introRef.current?.setVolume(volume);
     trackRef.current?.setVolume(volume);
-  }, [voice]);
+  }, [voiceSetVolume]);
 
   const setVoice = useCallback((v: VoiceOption) => {
-    voice.setVoice(v);
-  }, [voice]);
+    voiceSetVoice(v);
+  }, [voiceSetVoice]);
 
   const speakNewsFeed = useCallback((items: NewsItem[], withIntro = false) => {
     startNewsPlaylist(items, withIntro);
@@ -677,7 +750,7 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
     if (items.length === 0) return;
 
     const text = items.map((item) => `${item.title}. ${item.body}`).join(' ');
-    const speak = () => voice.speak(text, `Now broadcasting from ${stationName}.`);
+    const speak = () => voiceSpeak(text, `Now broadcasting from ${stationName}.`);
 
     stopMusic();
     clearFallbackTimer();
@@ -686,7 +759,7 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
     } else {
       speak();
     }
-  }, [stationName, voice, stopMusic, clearFallbackTimer, playWithIntro]);
+  }, [stationName, voiceSpeak, stopMusic, clearFallbackTimer, playWithIntro]);
 
   useEffect(() => {
     introRef.current = new IntroAudio();
@@ -714,13 +787,39 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
 
   const currentItem = currentIndex >= 0 ? playlist[currentIndex] ?? null : null;
 
+  const broadcastState: BroadcastStateValue = !isLive ? 'IDLE' : isMusicMode ? 'ENTERTAINMENT' : isIntroActive ? 'INTRO_MUSIC' : 'NEWS_SEGMENT';
+
+  const requestChannelSwitch = useCallback(() => {
+    setPlaybackLock(false);
+    voiceStop();
+    stopMusic();
+    stopIntro();
+    clearFallbackTimer();
+    currentIndexRef.current = -1;
+    setCurrentIndex(-1);
+    setIsMusicMode(false);
+    setIsLive(false);
+    isLiveRef.current = false;
+  }, [voiceStop, stopMusic, stopIntro, clearFallbackTimer]);
+
+  const speakBulletin = useCallback((text: string, intro?: string) => {
+    voiceStop();
+    clearFallbackTimer();
+    if (intro) {
+      voiceSpeak(text, intro);
+    } else {
+      voiceSpeak(text);
+    }
+  }, [voiceStop, voiceSpeak, clearFallbackTimer]);
+
   return {
     ...voice,
     queue, nextUp, activeAlert, isLive, dbReady, isMusicMode, entertainmentTrack,
     playlist, currentIndex, currentItem, isIntroActive, isBehindLive,
+    broadcastState, isPlaybackLocked,
     start, stop, simulateNews, triggerAlert, resetQueue,
     setRate, setVolume, setVoice, enqueueItems, speakNewsFeed,
     setFeedItems, skipNext, skipIntro,
-    goLive, jumpToIndex,
+    goLive, jumpToIndex, requestChannelSwitch, speakBulletin,
   };
 }
