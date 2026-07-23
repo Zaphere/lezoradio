@@ -396,6 +396,10 @@ export class AudioManager {
     return false;
   }
 
+  getTrackElement(): HTMLAudioElement | null {
+    return this.layers.track.element;
+  }
+
   dispose(): void {
     this.stopAll();
     this.onTrackEnd = null;

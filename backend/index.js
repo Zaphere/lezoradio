@@ -29,7 +29,7 @@ console.log(`Provider Framework: ${USE_PROVIDER_FRAMEWORK ? 'ENABLED' : 'DISABLE
 console.log('========================================\n');
 
 // Start Express API (health check + RSS proxy + expiry trigger)
-startApiServer(PORT);
+const httpServer = startApiServer(PORT);
 
 async function runIngestion() {
   try {
@@ -129,6 +129,19 @@ if (USE_PROVIDER_FRAMEWORK) {
 // Always run legacy ingestion (provides radio_scripts + news_items)
 console.log('Running initial legacy ingestion...');
 runIngestion();
+
+// Start the radio broadcast engine (TTS generation + segment scheduling)
+import('./engine/radioEngine.js').then(({ startEngine }) => {
+  console.log('\n========================================');
+  console.log('Starting Radio Broadcast Engine');
+  console.log('========================================');
+  return startEngine(httpServer);
+}).then((engine) => {
+  console.log('✓ Radio Engine started successfully\n');
+}).catch((error) => {
+  console.error('⚠ Radio Engine failed to start:', error.message);
+  console.log('  API server continues without broadcast engine.\n');
+});
 
 console.log(`Scheduling recurring legacy ingestion (cron: ${SCHEDULE})...`);
 const ingestionTask = cron.schedule(SCHEDULE, async () => {

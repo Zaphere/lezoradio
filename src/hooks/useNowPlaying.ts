@@ -46,6 +46,7 @@ interface UseNowPlayingResult {
   nowPlaying: NowPlaying | null;
   isConnected: boolean;
   error: string | null;
+  refetch: () => void;
 }
 
 export function useNowPlaying({ channelId, enabled = true }: UseNowPlayingOptions): UseNowPlayingResult {
@@ -57,20 +58,38 @@ export function useNowPlaying({ channelId, enabled = true }: UseNowPlayingOption
   const fetchInitial = useCallback(async () => {
     if (!enabled || !channelId) return;
     try {
-      const { data, error: fetchErr } = await supabase
-        .from('radio_station_state')
-        .select('*')
-        .eq('channel_id', channelId)
-        .maybeSingle();
+      let data: Record<string, unknown> | null = null;
 
-      if (fetchErr) {
-        console.warn('[useNowPlaying] Initial fetch error:', fetchErr.message);
-        setError(fetchErr.message);
-        return;
+      // Try backend proxy first (bypasses RLS via service-role key)
+      try {
+        const res = await fetch(`/api/content/now-playing?channel_id=${encodeURIComponent(channelId)}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json && typeof json === 'object' && 'channel_id' in json) {
+            data = json;
+          }
+        }
+      } catch {
+        // Proxy unavailable, fall back to direct Supabase
+      }
+
+      // Fallback: direct Supabase query
+      if (!data) {
+        const { data: directData, error: fetchErr } = await supabase
+          .from('radio_station_state')
+          .select('*')
+          .eq('channel_id', channelId)
+          .maybeSingle();
+
+        if (fetchErr) {
+          console.warn('[useNowPlaying] Initial fetch error:', fetchErr.message);
+          setError(fetchErr.message);
+          return;
+        }
+        data = directData;
       }
 
       if (!data) {
-        // No row yet for this channel — engine may not have created state.
         return;
       }
 
@@ -144,5 +163,5 @@ export function useNowPlaying({ channelId, enabled = true }: UseNowPlayingOption
     };
   }, [channelId, enabled, fetchInitial]);
 
-  return { nowPlaying, isConnected, error };
+  return { nowPlaying, isConnected, error, refetch: fetchInitial };
 }

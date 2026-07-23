@@ -99,6 +99,25 @@ function normalizeNewsCategory(rawCategory: string | undefined, preferredCategor
 }
 
 export async function fetchNewsItems(region?: string, category?: string): Promise<any[]> {
+  try {
+    const params = new URLSearchParams();
+    if (region) params.set('region', region);
+    if (category) params.set('category', category);
+
+    const response = await fetch(`/api/content/news${params.toString() ? `?${params.toString()}` : ''}`);
+    if (response.ok) {
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        console.log(`[fetchNewsItems] Proxy returned ${data.length} items (region=${region ?? 'all'}, category=${category ?? 'all'})`);
+        return data;
+      }
+    } else {
+      console.warn(`[fetchNewsItems] Proxy returned HTTP ${response.status}`);
+    }
+  } catch (err) {
+    console.warn('Content proxy unavailable, falling back to direct Supabase client:', err);
+  }
+
   const categoriesToQuery = getCategoryQueryValues(category);
 
   const events = await _silentFetch(async () => {
@@ -248,6 +267,21 @@ export async function fetchFeeds(): Promise<any[]> {
 }
 
 export async function fetchStations(): Promise<StationRecord[]> {
+  try {
+    const response = await fetch('/api/content/stations');
+    if (response.ok) {
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        console.log(`[fetchStations] Proxy returned ${data.length} stations`);
+        return data as StationRecord[];
+      }
+    } else {
+      console.warn(`[fetchStations] Proxy returned HTTP ${response.status}`);
+    }
+  } catch (err) {
+    console.warn('Stations proxy unavailable, falling back to direct Supabase client:', err);
+  }
+
   return _silentFetch<StationRecord>(async () =>
     supabase.from('stations').select('*').eq('is_active', true).order('priority').order('name')
   );

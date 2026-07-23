@@ -133,11 +133,29 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
   }, [channelOverride, drcRegion, station]);
 
   const [userStarted, setUserStarted] = useState(false);
-  const { nowPlaying, isConnected, error: nowPlayingError } = useNowPlaying({
+  const [skipToLive, setSkipToLive] = useState(false);
+  const { nowPlaying, isConnected, error: nowPlayingError, refetch: refetchNowPlaying } = useNowPlaying({
     channelId,
     enabled: userStarted,
   });
-  const audio = useAudioExecutor({ nowPlaying, enabled: userStarted });
+
+  const handleTrackEnd = useCallback(() => {
+    // When a segment ends, re-fetch to check for the next one
+    refetchNowPlaying();
+  }, [refetchNowPlaying]);
+
+  const audio = useAudioExecutor({ nowPlaying, enabled: userStarted, onTrackEnd: handleTrackEnd });
+
+  // "Go Live" — skip to the latest segment
+  const handleGoLive = useCallback(() => {
+    setSkipToLive(true);
+    refetchNowPlaying();
+  }, [refetchNowPlaying]);
+
+  // "Next" — skip to latest available segment
+  const handleNext = useCallback(() => {
+    refetchNowPlaying();
+  }, [refetchNowPlaying]);
 
   const isLive = userStarted && nowPlaying !== null && nowPlaying.segmentType !== 'silence';
   const isMusicMode = nowPlaying?.segmentType === 'track' && nowPlaying.audioType === 'ambient';
@@ -310,21 +328,6 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
 
           {isLive && nowPlaying && (
             <>
-              <AudioPlayerBar
-                title={nowPlaying.title ?? 'Now Playing'}
-                subtitle={nowPlaying.artist ?? undefined}
-                isPlaying={audio.isPlaying}
-                isPaused={audio.isPaused}
-                currentTime={audio.currentTime}
-                duration={audio.duration}
-                hasPrev={false}
-                hasNext={false}
-                onPlayPause={handlePlayPause}
-                onPrev={() => {}}
-                onNext={() => {}}
-                onSeek={handleSeek}
-              />
-
               {nowPlaying.description && (
                 <div className="card p-4 space-y-3 rf-fade-up">
                   <div className="flex items-center justify-between">
@@ -381,21 +384,51 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
             </div>
           )}
 
-          {userStarted && !isLive && (
-            <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-3 text-xs text-blue-400">
-              {isConnected
-                ? 'Waiting for the backend to start broadcasting...'
-                : 'Connecting to broadcast...'}
-            </div>
-          )}
+          {userStarted && (
+            <>
+              <AudioPlayerBar
+                title={nowPlaying?.title ?? 'Connecting...'}
+                subtitle={nowPlaying?.artist ?? undefined}
+                isPlaying={audio.isPlaying}
+                isPaused={audio.isPaused}
+                currentTime={audio.currentTime}
+                duration={audio.duration}
+                hasPrev={false}
+                hasNext={!skipToLive}
+                onPlayPause={handlePlayPause}
+                onPrev={() => {}}
+                onNext={handleNext}
+                onSeek={handleSeek}
+              />
 
-          {isLive && isMusicMode && (
-            <div className="rounded-xl bg-indigo-500/10 border border-indigo-500/20 p-3 text-xs text-indigo-400 flex items-center gap-2">
-              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-              </svg>
-              <span>Playing music</span>
-            </div>
+              {/* LIVE badge — visible when listening but behind the latest segment */}
+              {isLive && skipToLive && nowPlaying?.nextTitle && (
+                <button
+                  onClick={handleGoLive}
+                  className={`${SOFT_BTN} w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-medium min-h-11`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  Go Live
+                </button>
+              )}
+
+              {!isLive && (
+                <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-3 text-xs text-blue-400">
+                  {isConnected
+                    ? 'Waiting for the backend to start broadcasting...'
+                    : 'Connecting to broadcast...'}
+                </div>
+              )}
+
+              {isLive && isMusicMode && (
+                <div className="rounded-xl bg-indigo-500/10 border border-indigo-500/20 p-3 text-xs text-indigo-400 flex items-center gap-2">
+                  <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  </svg>
+                  <span>Playing music</span>
+                </div>
+              )}
+            </>
           )}
 
           <NewsFeedPreview

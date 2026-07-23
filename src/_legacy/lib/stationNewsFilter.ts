@@ -7,14 +7,17 @@ const STATION_NEWS_REGION: Record<string, string> = {
   'Congo': 'congo',
 };
 
+// Secondary regions: DRC-related region values as they appear in the database
+// (province names, country codes, continental tags).
 const DRC_SECONDARY_REGIONS: Record<string, string[]> = {
-  kinshasa: ['central-africa'],
-  goma: ['central-africa', 'east-africa'],
-  lubumbashi: ['central-africa', 'southern-africa'],
+  kinshasa: ['central-africa', 'congo', 'cd', 'nord-kivu', 'sud-kivu', 'haut-katanga', 'east-africa', 'southern-africa'],
+  goma: ['central-africa', 'congo', 'cd', 'nord-kivu', 'sud-kivu', 'haut-katanga', 'east-africa', 'southern-africa'],
+  lubumbashi: ['central-africa', 'congo', 'cd', 'nord-kivu', 'sud-kivu', 'haut-katanga', 'east-africa', 'southern-africa'],
 };
 
 function getStationNewsRegion(station: Pick<StationRecord, 'name' | 'country'>): string {
   if (STATION_NEWS_REGION[station.name]) return STATION_NEWS_REGION[station.name];
+  if (STATION_NEWS_REGION[station.country]) return STATION_NEWS_REGION[station.country];
   return station.country.toLowerCase().replace(/\s+/g, '-');
 }
 
@@ -23,6 +26,13 @@ function getSecondaryRegions(station: Pick<StationRecord, 'region'>): string[] {
     return DRC_SECONDARY_REGIONS[station.region];
   }
   return ['central-africa'];
+}
+
+function matchesRegion(itemRegion: string | undefined, slug: string, secondary: string[]): boolean {
+  if (!itemRegion) return false;
+  const lower = itemRegion.toLowerCase();
+  if (lower === slug.toLowerCase()) return true;
+  return secondary.some(s => s.toLowerCase() === lower);
 }
 
 function deduplicateByUrl(items: NewsItem[]): NewsItem[] {
@@ -54,23 +64,23 @@ export function filterNewsForStation(
     filtered = items.filter((i) => i.category === 'global');
   } else if (category === 'regional') {
     filtered = items.filter(
-      (i) => i.category === 'regional' && (i.region === slug || secondary.includes(i.region)),
+      (i) => i.category === 'regional' && matchesRegion(i.region, slug, secondary),
     );
   } else if (category === 'local') {
-    filtered = items.filter((i) => i.category === 'local' && i.region === slug);
+    filtered = items.filter((i) => i.category === 'local' && matchesRegion(i.region, slug, secondary));
   } else if (category === 'traffic') {
     filtered = items.filter(
-      (i) => i.category === 'traffic' && (i.region === slug || secondary.includes(i.region)),
+      (i) => i.category === 'traffic' && matchesRegion(i.region, slug, secondary),
     );
   } else if (category === 'alert') {
-    filtered = items.filter((i) => i.region === slug || secondary.includes(i.region));
+    filtered = items.filter((i) => matchesRegion(i.region, slug, secondary));
   } else {
     filtered = items.filter((i) => {
       if (i.category === 'global') return true;
-      if (i.category === 'regional') return i.region === slug || secondary.includes(i.region);
-      if (i.category === 'local') return i.region === slug;
-      if (i.category === 'traffic') return i.region === slug || secondary.includes(i.region);
-      if (i.category === 'alert') return i.region === slug || secondary.includes(i.region);
+      if (i.category === 'regional') return matchesRegion(i.region, slug, secondary);
+      if (i.category === 'local') return matchesRegion(i.region, slug, secondary);
+      if (i.category === 'traffic') return matchesRegion(i.region, slug, secondary);
+      if (i.category === 'alert') return matchesRegion(i.region, slug, secondary);
       return true;
     });
   }

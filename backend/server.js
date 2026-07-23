@@ -12,11 +12,113 @@ import { startBulletinSyncServer } from './bulletinSync.js';
 import registry from './providers/providerRegistry.js';
 import scheduler from './providers/providerScheduler.js';
 import healthMonitor from './providers/providerHealthMonitor.js';
+import { supabase as serviceSupabase } from './supabaseClient.js';
 
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distPath = path.resolve(__dirname, '..', 'dist');
+const CONTENT_RETENTION_MS = 72 * 60 * 60 * 1000;
+
+function retentionCutoff() {
+  return new Date(Date.now() - CONTENT_RETENTION_MS).toISOString();
+}
+
+function normalizeNewsCategory(rawCategory, preferredCategory) {
+  const normalized = (rawCategory || '').toLowerCase();
+  if (!normalized) return (preferredCategory || 'regional');
+  if (['local', 'regional', 'global', 'traffic', 'alert'].includes(normalized)) return normalized;
+  if (normalized === 'emergency') return 'alert';
+  return 'regional';
+}
+
+async function getNewsContent(region, category) {
+  const categoriesToQuery = category
+    ? ['regional', 'local', 'news']
+    : ['news', 'global', 'regional', 'local', 'traffic', 'alert', 'weather', 'agriculture', 'business', 'sports', 'geo', 'security', 'emergency', 'transport', 'event', 'government', 'health', 'tourism'];
+
+  let eventsQuery = serviceSupabase
+    .from('events')
+    .select('*')
+    .gte('created_at', retentionCutoff())
+    .in('category', categoriesToQuery)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (region) {
+    eventsQuery = eventsQuery.eq('province', region);
+  }
+
+  const { data: events, error: eventsError } = await eventsQuery;
+
+  if (eventsError) throw eventsError;
+
+  const mapped = (events || []).map((event) => ({
+    id: event.id,
+    feed_id: event.provider,
+    provider: event.provider,
+    title: event.title,
+    description: event.summary || '',
+    content: event.description || '',
+    url: event.metadata?.url || '',
+    region: event.province || event.country || 'global',
+    category: normalizeNewsCategory(event.category, category),
+    priority: event.priority,
+    city: event.city || event.metadata?.city,
+    province: event.province,
+    published_at: event.occurred_at || event.created_at,
+    ingested_at: event.created_at,
+    is_processed: event.status !== 'active',
+  }));
+
+  let newsQuery = serviceSupabase
+    .from('news_items')
+    .select('*')
+    .gte('ingested_at', retentionCutoff())
+    .in('category', categoriesToQuery)
+    .order('ingested_at', { ascending: false })
+    .limit(50);
+
+  if (region) {
+    const isDrcRegion = ['kinshasa', 'goma', 'lubumbashi'].includes(region);
+    if (isDrcRegion) {
+      newsQuery = newsQuery.in('region', [region, 'congo']);
+    } else {
+      newsQuery = newsQuery.eq('region', region);
+    }
+  }
+
+  const { data: newsItems, error: newsItemsError } = await newsQuery;
+
+  if (newsItemsError) throw newsItemsError;
+
+  const mappedNews = (newsItems || []).map((item) => ({
+    id: item.id,
+    feed_id: item.feed_id,
+    title: item.title,
+    description: item.description || '',
+    content: item.content || '',
+    url: item.url || '',
+    region: item.region || 'global',
+    category: normalizeNewsCategory(item.category, category),
+    published_at: item.published_at || item.ingested_at,
+    ingested_at: item.ingested_at,
+    is_processed: item.is_processed || false,
+  }));
+
+  const seen = new Set();
+  const merged = [...mappedNews];
+  for (const item of merged) seen.add(item.title?.substring(0, 100) || item.id);
+  for (const item of mapped) {
+    const key = item.title?.substring(0, 100) || item.id;
+    if (!seen.has(key)) {
+      merged.push(item);
+      seen.add(key);
+    }
+  }
+
+  return merged.sort((a, b) => new Date(b.ingested_at).getTime() - new Date(a.ingested_at).getTime());
+}
 
 export function createApp() {
   const app = express();
@@ -64,6 +166,170 @@ export function createApp() {
         })),
       },
     });
+  });
+
+  app.get('/api/content/news', async (req, res) => {
+    try {
+      const region = typeof req.query.region === 'string' ? req.query.region : undefined;
+      const category = typeof req.query.category === 'string' ? req.query.category : undefined;
+      const items = await getNewsContent(region, category);
+      res.json(items);
+    } catch (err) {
+      console.error('Failed to load content proxy news:', err);
+      res.status(500).json({ error: err.message || 'Failed to load news items' });
+    }
+  });
+
+  app.get('/api/content/stations', async (_req, res) => {
+    try {
+      const { data, error } = await serviceSupabase
+        .from('stations')
+        .select('*')
+        .eq('is_active', true)
+        .order('priority')
+        .order('name');
+
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err) {
+      console.error('Failed to load content proxy stations:', err);
+      res.status(500).json({ error: err.message || 'Failed to load stations' });
+    }
+  });
+
+  // Now-playing proxy — bypasses RLS by using service-role key
+  app.get('/api/content/now-playing', async (req, res) => {
+    try {
+      const channelId = typeof req.query.channel_id === 'string' ? req.query.channel_id : undefined;
+      if (!channelId) {
+        return res.status(400).json({ error: 'Missing channel_id query parameter' });
+      }
+
+      const { data, error } = await serviceSupabase
+        .from('radio_station_state')
+        .select('*')
+        .eq('channel_id', channelId)
+        .maybeSingle();
+
+      if (error) throw error;
+      console.log(`[now-playing] channel_id=${channelId} → ${data ? 'FOUND (type=' + data.segment_type + ', title=' + (data.title || '').substring(0, 40) + ')' : 'NULL'}`);
+      res.json(data || null);
+    } catch (err) {
+      console.error('Failed to load now-playing state:', err);
+      res.status(500).json({ error: err.message || 'Failed to load now-playing state' });
+    }
+  });
+
+  // Diagnostic: list all rows in radio_station_state
+  app.get('/api/debug/radio-state', async (_req, res) => {
+    try {
+      const { data, error } = await serviceSupabase
+        .from('radio_station_state')
+        .select('channel_id, segment_type, title, version, started_at');
+      if (error) throw error;
+      res.json({ rows: data || [], count: (data || []).length });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Diagnostic: list station_channels
+  app.get('/api/debug/channels', async (_req, res) => {
+    try {
+      const { data, error } = await serviceSupabase
+        .from('station_channels')
+        .select('id, station_id, channel_id, name, language, is_active, frequency');
+      if (error) throw error;
+      res.json({ rows: data || [], count: (data || []).length });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Seed station_channels + clean stale radio_station_state data
+  app.post('/api/debug/seed', async (_req, res) => {
+    try {
+      // Step 1: Find DR Congo station
+      const { data: station, error: stErr } = await serviceSupabase
+        .from('stations')
+        .select('id, name, country_code')
+        .eq('country_code', 'CD')
+        .eq('name', 'DR Congo')
+        .maybeSingle();
+      if (stErr) throw stErr;
+      if (!station) return res.status(404).json({ error: 'DR Congo station not found in stations table' });
+
+      // Step 2: Check if station_channels already has DRC data
+      const { data: existing } = await serviceSupabase
+        .from('station_channels')
+        .select('channel_id')
+        .in('channel_id', ['kinshasa-main', 'goma-main', 'lubumbashi-main']);
+      const existingIds = new Set((existing || []).map(r => r.channel_id));
+
+      // Step 3: Find voices for DR Congo
+      const { data: voices } = await serviceSupabase
+        .from('station_voices')
+        .select('*')
+        .eq('station_id', station.id)
+        .eq('is_active', true);
+      const voiceMap = {};
+      for (const v of (voices || [])) {
+        voiceMap[v.language] = v.voice_id;
+      }
+
+      const channels = [
+        { channel_id: 'kinshasa-main', name: 'Kinshasa Main', lang: 'ln', freq: 88.1, emoji: '🇨🇩', desc: 'Primary Kinshasa broadcast channel in Lingala', priority: 1 },
+        { channel_id: 'goma-main', name: 'Goma Main', lang: 'sw', freq: 92.5, emoji: '🌋', desc: 'Primary Goma broadcast channel in Swahili', priority: 1 },
+        { channel_id: 'lubumbashi-main', name: 'Lubumbashi Main', lang: 'sw', freq: 95.3, emoji: '⛏️', desc: 'Primary Lubumbashi broadcast channel in Swahili', priority: 1 },
+      ];
+
+      let inserted = 0;
+      for (const ch of channels) {
+        if (existingIds.has(ch.channel_id)) continue;
+        const { error: insErr } = await serviceSupabase
+          .from('station_channels')
+          .insert({
+            station_id: station.id,
+            channel_id: ch.channel_id,
+            name: ch.name,
+            description: ch.desc,
+            frequency: ch.freq,
+            emoji: ch.emoji,
+            language: ch.lang,
+            primary_voice_id: voiceMap[ch.lang] || null,
+            is_active: true,
+            priority: ch.priority,
+          });
+        if (insErr) {
+          console.error(`[seed] Failed to insert ${ch.channel_id}:`, insErr.message);
+        } else {
+          inserted++;
+        }
+      }
+
+      // Step 4: Clean stale UUID-based radio_station_state rows
+      const { data: staleRows } = await serviceSupabase
+        .from('radio_station_state')
+        .select('channel_id');
+      const validIds = new Set(['kinshasa-main', 'goma-main', 'lubumbashi-main']);
+      const staleIds = (staleRows || []).filter(r => !validIds.has(r.channel_id)).map(r => r.channel_id);
+      let deleted = 0;
+      if (staleIds.length > 0) {
+        // Delete in batches (Supabase limit)
+        for (let i = 0; i < staleIds.length; i += 50) {
+          const batch = staleIds.slice(i, i + 50);
+          const { error: delErr } = await serviceSupabase
+            .from('radio_station_state')
+            .delete()
+            .in('channel_id', batch);
+          if (!delErr) deleted += batch.length;
+        }
+      }
+
+      res.json({ station: station.name, station_id: station.id, inserted, deleted_stale: deleted, voices: voiceMap });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // Trigger manual ingestion

@@ -28,8 +28,9 @@ class RadioEngine {
 
   /**
    * Start the radio engine.
+   * @param {import('http').Server} httpServer - Optional HTTP server for WebSocket attachment
    */
-  async start() {
+  async start(httpServer) {
     console.log(`[${new Date().toISOString()}] [radioEngine] Starting Radio Engine v${ENGINE_VERSION}`);
 
     // Load all configuration from DB
@@ -41,6 +42,7 @@ class RadioEngine {
     ]);
 
     const channels = stationController.getAllChannels();
+    console.log(`[${new Date().toISOString()}] [radioEngine] Loaded ${channels.length} channels: ${channels.map(c => c.channel_id).join(', ')}`);
     if (channels.length === 0) {
       console.warn(`[radioEngine] No active channels found. Engine idle.`);
       return;
@@ -50,6 +52,7 @@ class RadioEngine {
     for (const ch of channels) {
       const state = playbackController.createChannelState(ch.channel_id, ch.station_id, ch.language || 'fr');
       this.channels.set(ch.channel_id, state);
+      console.log(`[${new Date().toISOString()}] [radioEngine] Channel: ${ch.channel_id} (station=${ch.station_id}, lang=${ch.language || 'fr'})`);
     }
 
     // Start event listener
@@ -70,6 +73,23 @@ class RadioEngine {
 
     this.running = true;
     console.log(`[${new Date().toISOString()}] [radioEngine] Engine started with ${channels.length} channels`);
+
+    // Start WebSocket server if HTTP server is available
+    if (httpServer) {
+      radioWsServer.startRadioWsServer(httpServer, '/ws/radio');
+    }
+
+    // Trigger initial bulletins so there's content for the first listener
+    for (const ch of channels) {
+      this.triggerBulletin({
+        channelId: ch.channel_id,
+        stationId: ch.station_id,
+        label: `${ch.station_name || 'Radio Lezo'} - Initial Bulletin`,
+        bulletinId: `initial-${Date.now()}`,
+      }).catch(err => {
+        console.error(`[${new Date().toISOString()}] [radioEngine] Initial bulletin failed for ${ch.channel_id}:`, err.message);
+      });
+    }
   }
 
   /**
@@ -128,8 +148,8 @@ class RadioEngine {
     const stationName = channel?.station_name || 'Radio Lezo';
     const voice = languageController.resolveVoice(stationId, language, 'bulletin');
 
-    // Fetch unplayed events for this channel and generate scripts
     const events = await queueManager.getUnplayedEvents(channelId, 10);
+    console.log(`[${new Date().toISOString()}] [radioEngine] Found ${events.length} unplayed events for ${channelId}`);
 
     let bulletinText;
     if (events.length > 0) {
@@ -143,8 +163,11 @@ class RadioEngine {
     }
 
     if (voice) {
+      console.log(`[${new Date().toISOString()}] [radioEngine] TTS voice resolved: ${voice.voice_id} for ${channelId}/${language}`);
       const ttsResult = await ttsGenerator.getOrGenerate(bulletinText, voice.voice_id, language);
+
       if (ttsResult) {
+        console.log(`[${new Date().toISOString()}] [radioEngine] TTS generated for ${channelId}: ${ttsResult.audioUrl?.substring(0, 80)}`);
         // Determine primary source attribution from top event
         const topEvent = events[0] || {};
 
@@ -171,7 +194,35 @@ class RadioEngine {
             category: event.category,
           });
         }
+      } else {
+        console.warn(`[${new Date().toISOString()}] [radioEngine] TTS generation failed for ${channelId} — writing fallback state`);
+        // Write a fallback "waiting for TTS" state so the frontend isn't stuck on null
+        this.updateCurrentSegment(channelId, {
+          segment_type: SEGMENT_TYPES.SILENCE,
+          segment_id: `silence-${Date.now()}`,
+          audio_url: null,
+          audio_type: null,
+          title: `${stationName} - Preparing broadcast...`,
+          duration_seconds: 30,
+          language,
+          voice_id: voice.voice_id,
+          description: `Broadcast is initializing. ${events.length > 0 ? `${events.length} stories queued.` : 'Waiting for content.'}`,
+        });
       }
+    } else {
+      console.warn(`[${new Date().toISOString()}] [radioEngine] No voice found for ${channelId}/${language} (stationId=${stationId}) — writing fallback state`);
+      // No voice configured — write fallback state
+      this.updateCurrentSegment(channelId, {
+        segment_type: SEGMENT_TYPES.SILENCE,
+        segment_id: `silence-${Date.now()}`,
+        audio_url: null,
+        audio_type: null,
+        title: `${stationName} - Broadcast initializing`,
+        duration_seconds: 30,
+        language,
+        voice_id: null,
+        description: `No TTS voice configured for ${language}. Broadcast will start once configured.`,
+      });
     }
   }
 
@@ -240,13 +291,17 @@ class RadioEngine {
    */
   async updateCurrentSegment(channelId, segmentData) {
     const state = this.channels.get(channelId);
-    if (!state) return;
+    if (!state) {
+      console.warn(`[${new Date().toISOString()}] [radioEngine] updateCurrentSegment: no state for ${channelId}`);
+      return;
+    }
 
     state.nextSegment = { ...state.currentSegment };
     state.currentSegment = { ...DEFAULT_STATE, ...segmentData };
     state.startedAt = new Date().toISOString();
     state.version += 1;
 
+    console.log(`[${new Date().toISOString()}] [radioEngine] Writing state for ${channelId}: type=${segmentData.segment_type}, title=${segmentData.title?.substring(0, 60)}`);
     await playbackController.updateState(channelId, state);
     await playbackController.logPlayback(channelId, state.currentSegment);
     radioWsServer.broadcastState(channelId, this.formatStateForFrontend(state));
@@ -325,9 +380,9 @@ export function getEngine() {
   return engineInstance;
 }
 
-export async function startEngine() {
+export async function startEngine(httpServer) {
   const engine = getEngine();
-  await engine.start();
+  await engine.start(httpServer);
   return engine;
 }
 

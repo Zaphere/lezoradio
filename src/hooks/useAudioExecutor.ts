@@ -13,6 +13,7 @@ export interface AudioExecutorState {
 interface UseAudioExecutorOptions {
   nowPlaying: NowPlaying | null;
   enabled?: boolean;
+  onTrackEnd?: () => void;
 }
 
 interface UseAudioExecutorResult extends AudioExecutorState {
@@ -37,6 +38,7 @@ interface UseAudioExecutorResult extends AudioExecutorState {
 export function useAudioExecutor({
   nowPlaying,
   enabled = true,
+  onTrackEnd,
 }: UseAudioExecutorOptions): UseAudioExecutorResult {
   const [state, setState] = useState<AudioExecutorState>({
     isPlaying: false,
@@ -48,6 +50,8 @@ export function useAudioExecutor({
   const managerRef = useRef<AudioManager | null>(null);
   const versionRef = useRef(0);
   const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const onTrackEndRef = useRef(onTrackEnd);
+  onTrackEndRef.current = onTrackEnd;
 
   const clearProgressTimer = useCallback(() => {
     if (progressTimerRef.current) {
@@ -56,6 +60,24 @@ export function useAudioExecutor({
     }
   }, []);
 
+  const startProgressTimer = useCallback(() => {
+    clearProgressTimer();
+    progressTimerRef.current = setInterval(() => {
+      const mgr = managerRef.current;
+      if (!mgr) return;
+      const el = mgr.getTrackElement();
+      if (!el || el.paused) return;
+      const ct = el.currentTime;
+      const dur = el.duration;
+      if (Number.isFinite(ct) && Number.isFinite(dur) && dur > 0) {
+        setState(prev => {
+          if (prev.currentTime === ct && prev.duration === dur) return prev;
+          return { ...prev, currentTime: ct, duration: dur };
+        });
+      }
+    }, 250);
+  }, [clearProgressTimer]);
+
   useEffect(() => {
     if (!enabled) return;
 
@@ -63,7 +85,9 @@ export function useAudioExecutor({
     managerRef.current = mgr;
 
     mgr.setTrackEndCallback(() => {
+      clearProgressTimer();
       setState(prev => ({ ...prev, isPlaying: false, isPaused: false, currentTime: 0 }));
+      onTrackEndRef.current?.();
     });
 
     return () => {
@@ -99,16 +123,19 @@ export function useAudioExecutor({
         setTimeout(() => {
           mgr.playTrack(url);
           setState({ isPlaying: true, isPaused: false, currentTime: 0, duration: duration / 1000 });
+          startProgressTimer();
         }, TIMING.INTRO_DUCK_DURATION);
       } else if (transition === 'crossfade' && mgr.isAnythingPlaying) {
         mgr.fadeOutAll(TIMING.CROSSFADE_DURATION, () => {
           mgr.playTrack(url);
           setState({ isPlaying: true, isPaused: false, currentTime: 0, duration: duration / 1000 });
+          startProgressTimer();
         });
       } else {
         mgr.stopAll();
         mgr.playTrack(url);
         setState({ isPlaying: true, isPaused: false, currentTime: 0, duration: duration / 1000 });
+        startProgressTimer();
       }
     };
 
@@ -153,7 +180,7 @@ export function useAudioExecutor({
       default:
         break;
     }
-  }, [nowPlaying, enabled, clearProgressTimer]);
+  }, [nowPlaying, enabled, clearProgressTimer, startProgressTimer]);
 
   useEffect(() => {
     if (!state.isPlaying) {
@@ -175,8 +202,12 @@ export function useAudioExecutor({
     setState(prev => ({ ...prev, isPlaying: true, isPaused: false }));
   }, []);
 
-  const seek = useCallback((_time: number) => {
-    // The current execution path manages playback through AudioManager, so seek is kept as a no-op until a dedicated media element is surfaced.
+  const seek = useCallback((time: number) => {
+    const el = managerRef.current?.getTrackElement();
+    if (el && Number.isFinite(el.duration)) {
+      el.currentTime = Math.max(0, Math.min(time, el.duration));
+      setState(prev => ({ ...prev, currentTime: el.currentTime }));
+    }
   }, []);
 
   return {
