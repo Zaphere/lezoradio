@@ -1,6 +1,9 @@
 const FADE_MS = 700;
 const FADE_STEP_MS = 40;
-const PRE_SPEECH_GAP_MS = 500;
+
+export function getRandomSpeechGap(): number {
+  return 300 + Math.random() * 500; // 300-800ms randomized
+}
 
 export class TrackAudio {
   private audio: HTMLAudioElement | null = null;
@@ -19,7 +22,7 @@ export class TrackAudio {
     const handleEnded = () => {
       this.fadeOut(() => {
         this.playing = false;
-        this.gapTimer = setTimeout(onEnded, PRE_SPEECH_GAP_MS);
+        this.gapTimer = setTimeout(onEnded, getRandomSpeechGap());
       });
     };
 
@@ -117,5 +120,3 @@ export class TrackAudio {
     }
   }
 }
-
-export const PRE_TRACK_SPEECH_GAP_MS = PRE_SPEECH_GAP_MS;

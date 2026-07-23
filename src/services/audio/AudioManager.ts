@@ -6,7 +6,7 @@ interface LayerState {
   element: HTMLAudioElement | null;
   volume: number;
   fadeTimer: ReturnType<typeof setInterval> | null;
-  state: 'idle' | 'loading' | 'playing' | 'fading-in' | 'fading-out';
+  state: 'idle' | 'loading' | 'playing' | 'paused' | 'fading-in' | 'fading-out';
 }
 
 export class AudioManager {
@@ -337,6 +337,28 @@ export class AudioManager {
     }
   }
 
+  pauseAll(): void {
+    for (const id of ['intro', 'background', 'track'] as AudioLayerId[]) {
+      const layer = this.layers[id];
+      const audio = layer.element;
+      if (!audio || audio.paused) continue;
+      audio.pause();
+      this.clearFade(id);
+      layer.state = 'paused';
+    }
+  }
+
+  resumeAll(): void {
+    for (const id of ['intro', 'background', 'track'] as AudioLayerId[]) {
+      const layer = this.layers[id];
+      const audio = layer.element;
+      if (!audio || layer.state !== 'paused') continue;
+      layer.state = 'playing';
+      void audio.play().catch(() => undefined);
+      this.applyVolume(id);
+    }
+  }
+
   stopAll(): void {
     for (const id of ['intro', 'background', 'track'] as AudioLayerId[]) {
       const layer = this.layers[id];
@@ -362,6 +384,14 @@ export class AudioManager {
     for (const id of ['intro', 'background', 'track'] as AudioLayerId[]) {
       const layer = this.layers[id];
       if (layer.state === 'playing' || layer.state === 'fading-in' || layer.state === 'fading-out') return true;
+    }
+    return false;
+  }
+
+  get isAnythingPaused(): boolean {
+    for (const id of ['intro', 'background', 'track'] as AudioLayerId[]) {
+      const layer = this.layers[id];
+      if (layer.state === 'paused') return true;
     }
     return false;
   }

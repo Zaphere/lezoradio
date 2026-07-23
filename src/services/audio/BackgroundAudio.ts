@@ -2,7 +2,7 @@ const BG_URL =
   `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/introaudio/backgroundmusic.mp3`;
 
 const DEFAULT_VOLUME = 0.12;
-const FADE_MS = 400;
+const FADE_MS = 900;
 
 export class BackgroundAudio {
   private audio: HTMLAudioElement | null = null;

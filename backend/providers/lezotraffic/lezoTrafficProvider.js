@@ -124,7 +124,7 @@ class LezoTrafficProvider extends BaseProvider {
       }
 
       try {
-        this.log(`Syncing endpoint: ${endpoint}`);
+        this.log(`Syncing endpoint: ${endpoint} -> ${endpointConfig.path}`);
 
         const queryParams = endpointConfig.params({
           ...this.config.filters,
@@ -138,6 +138,13 @@ class LezoTrafficProvider extends BaseProvider {
         const items = Array.isArray(data) ? data : [];
         const events = normalizeLezoTrafficItems(items, endpointConfig.path);
 
+        if (items.length > 0 && events.length === 0) {
+          this.log(`WARNING: Endpoint ${endpoint} returned ${items.length} items but 0 events after normalization`, 'warn');
+        }
+
+        const trafficEvents = events.filter(e => e.category === 'traffic');
+        const geoEvents = events.filter(e => e.category === 'geo');
+
         allEvents.push(...events);
         this.lastSyncTimes[endpoint] = new Date().toISOString();
 
@@ -147,7 +154,7 @@ class LezoTrafficProvider extends BaseProvider {
 
         markEndpointAvailable(endpointConfig.path);
 
-        this.log(`Endpoint ${endpoint}: ${items.length} items, ${events.length} events, ${duration}ms`);
+        this.log(`Endpoint ${endpoint}: ${items.length} items, ${events.length} events (${trafficEvents.length} traffic, ${geoEvents.length} geo), ${duration}ms`);
 
       } catch (error) {
         requestMetrics.total++;
@@ -155,14 +162,15 @@ class LezoTrafficProvider extends BaseProvider {
 
         if (error instanceof EndpointUnavailableError) {
           markEndpointUnavailable(endpointConfig.path);
-          this.log(`Endpoint ${endpoint} unavailable (HTTP ${error.httpStatus}), retrying after 24h`, 'warn');
+          this.log(`Endpoint ${endpoint} (${endpointConfig.path}) unavailable (HTTP ${error.httpStatus}), retrying after 24h`, 'warn');
         } else if (error instanceof LezoTrafficAPIError && error.httpStatus >= 500) {
           markEndpointUnavailable(endpointConfig.path);
-          this.log(`Endpoint ${endpoint} failed with server error (HTTP ${error.httpStatus}), marking unavailable for 24h`, 'warn');
+          this.log(`Endpoint ${endpoint} (${endpointConfig.path}) failed with server error (HTTP ${error.httpStatus}), marking unavailable for 24h`, 'warn');
+        } else {
+          this.log(`Endpoint ${endpoint} (${endpointConfig.path}) error: ${error.message} (HTTP ${error.httpStatus || 'N/A'})`, 'error');
         }
 
         const errorMsg = `Failed to sync ${endpoint}: ${error.message}`;
-        this.log(errorMsg, 'error');
         endpointErrors.push(errorMsg);
       }
     }

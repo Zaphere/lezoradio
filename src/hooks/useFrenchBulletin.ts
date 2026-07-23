@@ -1,3 +1,4 @@
+// @deprecated — archived in Phase 1 (2026-07-14). Replaced by backend engine modules and frontend useNowPlaying/useAudioExecutor.
 import { useState, useRef, useEffect } from 'react';
 import {
   getFrenchBulletinSlot,

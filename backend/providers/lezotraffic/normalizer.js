@@ -58,7 +58,7 @@ function normalizeAlert(item, endpoint) {
   const incident = item.incident || {};
   const geoData = extractGeoData(incident.coordinates ? { coordinates: incident.coordinates, city: incident.city } : item);
   
-  const providerEventId = item.id || `${endpoint}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const providerEventId = (item.id && String(item.id).trim()) || `${endpoint}-alert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   const summary = cleanText(item.message, 500);
   const description = cleanText(item.message, 2000);
   
@@ -99,13 +99,33 @@ function normalizeAlert(item, endpoint) {
   };
 }
 
+const ENDPOINT_CATEGORY_MAP = {
+  '/accidents': { category: 'traffic', subcategory: 'accident' },
+  '/embouteillages': { category: 'traffic', subcategory: 'congestion' },
+  '/travaux': { category: 'traffic', subcategory: 'road_block' },
+  '/incidents': { category: 'traffic', subcategory: 'incident' },
+  '/alertes': { category: 'traffic', subcategory: 'incident' },
+};
+
+function resolveCategory(endpoint, item) {
+  if (item.type) {
+    return mapIncidentType(item.type);
+  }
+  for (const [path, mapping] of Object.entries(ENDPOINT_CATEGORY_MAP)) {
+    if (endpoint.includes(path)) {
+      return mapping;
+    }
+  }
+  return { category: 'traffic', subcategory: 'incident' };
+}
+
 function normalizeIncident(item, endpoint) {
   const geoData = extractGeoData(item);
-  const providerEventId = item.id || `${endpoint}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const providerEventId = (item.id && String(item.id).trim()) || `${endpoint}-incident-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   const summary = cleanText(item.description || item.summary, 500);
   const description = cleanText(item.description, 2000);
   
-  const { category, subcategory } = mapIncidentType(item.type || 'incident');
+  const { category, subcategory } = resolveCategory(endpoint, item);
   const priority = mapSeverity(item.severity || 'medium');
   const status = mapStatus(item.status);
 
@@ -144,7 +164,7 @@ function normalizeIncident(item, endpoint) {
 
 function normalizeDestination(item, endpoint) {
   const geoData = extractGeoData(item);
-  const providerEventId = `${endpoint}-${item.name}-${Date.now()}`;
+  const providerEventId = `${endpoint}-dest-${item.name || 'unknown'}-${Date.now()}`;
   
   return {
     provider: 'lezotraffic',
@@ -280,4 +300,6 @@ export {
   normalizeLezoTrafficItem,
   normalizeLezoTrafficItems,
   mapStatus,
+  ENDPOINT_CATEGORY_MAP,
+  resolveCategory,
 };

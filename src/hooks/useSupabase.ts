@@ -15,7 +15,9 @@ export function useNewsItems(region?: string, category?: NewsCategory) {
     setLoading(true);
     try {
       const data = await db.fetchNewsItems(region, category);
-      setItems(mapRows<NewsItem>(data));
+      const items = mapRows<NewsItem>(data);
+      console.log(`[useNewsItems] Fetched ${items.length} items (region=${region ?? 'all'}, category=${category ?? 'all'})`);
+      setItems(items);
     } catch {
       setItems([]);
     } finally {

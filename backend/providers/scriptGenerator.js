@@ -1,139 +1,165 @@
 /**
  * Unified Script Generator
- * Provider-agnostic AI script generator for all event types
- * Takes normalized events and produces broadcast-ready scripts
+ * Provider-agnostic AI script generator for all event types.
+ * Takes normalized events and produces broadcast-ready scripts.
+ *
+ * Placeholders:
+ *   {title}          – event title
+ *   {summary}        – event summary (truncated)
+ *   {provider}       – provider name (lezotraffic, rss, etc.)
+ *   {city}           – city name
+ *   {province}       – province name
+ *   {location}       – city, province, country combined
+ *   {incident_type}  – subcategory / incident type label
+ *   {severity}       – severity label (high/medium/low)
  */
 
-/**
- * Script templates for different categories, priorities, and languages
- */
 const SCRIPT_TEMPLATES = {
   fr: {
     critical: {
-      emergency: "Alerte d'urgence. {title}. {summary}. Suivez les instructions des autorités.",
-      traffic: "Alerte critique. {title}. {summary}. Circulation perturbée. Évitez la zone.",
+      emergency: "Alerte d'urgence. {title}. {summary}. {location_suffix}Suivez les instructions des autorités.",
+      traffic: "{provider_prefix}Alerte critique trafic. {title}. {summary}. {location_suffix}Circulation perturbée. Évitez la zone.",
+      security: "{provider_prefix}Alerte sécurité. {title}. {summary}. {location_suffix}Restez vigilants.",
       news: "Flash info urgent. {title}. {summary}.",
-      weather: "Alerte météo critique. {title}. {summary}. Prenez des précautions immédiates.",
-      default: "Alerte critique. {title}. {summary}.",
+      weather: "Alerte météo critique. {title}. {summary}. {location_suffix}Prenez des précautions immédiates.",
+      default: "Alerte critique. {title}. {summary}. {location_suffix}",
     },
     high: {
-      emergency: "Mise à jour urgence. {title}. {summary}. Restez informés.",
-      traffic: "Mise à jour trafic. {title}. {summary}. Prudence recommandée.",
+      emergency: "Mise à jour urgence. {title}. {summary}. {location_suffix}Restez informés.",
+      traffic: "{provider_prefix}Mise à jour trafic. {title}. {summary}. {location_suffix}Prudence recommandée.",
+      security: "{provider_prefix}Information sécurité. {title}. {summary}. {location_suffix}Vigilance requise.",
       news: "Information importante. {title}. {summary}.",
-      weather: "Alerte météo. {title}. {summary}. Vigilance requise.",
-      default: "Mise à jour importante. {title}. {summary}.",
+      weather: "Alerte météo. {title}. {summary}. {location_suffix}Vigilance requise.",
+      default: "Mise à jour importante. {title}. {summary}. {location_suffix}",
     },
     medium: {
       emergency: "Note urgence. {title}. {summary}.",
-      traffic: "Information trafic. {title}. {summary}.",
+      traffic: "{provider_prefix}Information trafic. {title}. {summary}. {location_suffix}",
+      security: "{provider_prefix}Note sécurité. {title}. {summary}. {location_suffix}",
       news: "Aux informations. {title}. {summary}.",
       weather: "Prévisions météo. {title}. {summary}.",
-      default: "Information. {title}. {summary}.",
+      default: "Information. {title}. {summary}. {location_suffix}",
     },
     low: {
       emergency: "Note urgence. {title}.",
-      traffic: "Note trafic. {title}.",
+      traffic: "{provider_prefix}Note trafic. {title}. {location_suffix}",
+      security: "Note sécurité. {title}. {location_suffix}",
       news: "Note. {title}.",
       weather: "Météo. {title}.",
-      default: "Note. {title}.",
+      default: "Note. {title}. {location_suffix}",
     },
   },
   en: {
     critical: {
-      emergency: "Critical alert. {title}. {summary}. Follow official instructions.",
-      traffic: "Critical alert. {title}. {summary}. Expect severe delays. Avoid the area.",
+      emergency: "Critical alert. {title}. {summary}. {location_suffix}Follow official instructions.",
+      traffic: "{provider_prefix}Critical traffic alert. {title}. {summary}. {location_suffix}Expect severe delays. Avoid the area.",
+      security: "{provider_prefix}Security alert. {title}. {summary}. {location_suffix}Stay alert.",
       news: "Breaking news urgent. {title}. {summary}.",
-      weather: "Severe weather warning. {title}. {summary}. Take immediate precautions.",
-      default: "Critical alert. {title}. {summary}.",
+      weather: "Severe weather warning. {title}. {summary}. {location_suffix}Take immediate precautions.",
+      default: "Critical alert. {title}. {summary}. {location_suffix}",
     },
     high: {
-      emergency: "Emergency update. {title}. {summary}. Stay informed.",
-      traffic: "Traffic update. {title}. {summary}. Exercise caution.",
+      emergency: "Emergency update. {title}. {summary}. {location_suffix}Stay informed.",
+      traffic: "{provider_prefix}Traffic update. {title}. {summary}. {location_suffix}Exercise caution.",
+      security: "{provider_prefix}Security update. {title}. {summary}. {location_suffix}Vigilance required.",
       news: "Important update. {title}. {summary}.",
-      weather: "Weather alert. {title}. {summary}. Vigilance required.",
-      default: "Important update. {title}. {summary}.",
+      weather: "Weather alert. {title}. {summary}. {location_suffix}Vigilance required.",
+      default: "Important update. {title}. {summary}. {location_suffix}",
     },
     medium: {
       emergency: "Emergency note. {title}. {summary}.",
-      traffic: "Traffic information. {title}. {summary}.",
+      traffic: "{provider_prefix}Traffic information. {title}. {summary}. {location_suffix}",
+      security: "{provider_prefix}Security note. {title}. {summary}. {location_suffix}",
       news: "News update. {title}. {summary}.",
       weather: "Weather forecast. {title}. {summary}.",
-      default: "Update. {title}. {summary}.",
+      default: "Update. {title}. {summary}. {location_suffix}",
     },
     low: {
       emergency: "Emergency note. {title}.",
-      traffic: "Traffic note. {title}.",
+      traffic: "{provider_prefix}Traffic note. {title}. {location_suffix}",
+      security: "Security note. {title}. {location_suffix}",
       news: "News note. {title}.",
       weather: "Weather note. {title}.",
-      default: "Note. {title}.",
+      default: "Note. {title}. {location_suffix}",
     },
   },
   sw: {
     critical: {
-      emergency: " Tahadhari muhimu. {title}. {summary}. Fuata maelekezo ya rasmi.",
-      traffic: "Tahadhari muhimu. {title}. {summary}. Tengeneza msongamano. Epuka eneo.",
+      emergency: "Tahadhari muhimu. {title}. {summary}. {location_suffix}Fuata maelekezo ya rasmi.",
+      traffic: "{provider_prefix}Tahadhari muhimu ya trafiki. {title}. {summary}. {location_suffix}Tengeneza msongamano. Epuka eneo.",
+      security: "{provider_prefix}Tahadhari ya usalama. {title}. {summary}. {location_suffix}Kuwa macho.",
       news: "Habari muhimu za haraka. {title}. {summary}.",
-      weather: "Tahadhari ya hali ya hewa. {title}. {summary}. Chukua tahadhari.",
-      default: "Tahadhari muhimu. {title}. {summary}.",
+      weather: "Tahadhari ya hali ya hewa. {title}. {summary}. {location_suffix}Chukua tahadhari.",
+      default: "Tahadhari muhimu. {title}. {summary}. {location_suffix}",
     },
     high: {
-      emergency: "Sasisho la dharura. {title}. {summary}. Endelea kufuatilia.",
-      traffic: "Sasisho la msongamano. {title}. {summary}. Kuwa makini.",
+      emergency: "Sasisho la dharura. {title}. {summary}. {location_suffix}Endelea kufuatilia.",
+      traffic: "{provider_prefix}Sasisho la trafiki. {title}. {summary}. {location_suffix}Kuwa makini.",
+      security: "{provider_prefix}Sasisho la usalama. {title}. {summary}. {location_suffix}Kuwa tayari.",
       news: "Sasisho muhimu. {title}. {summary}.",
-      weather: "Tahadhari ya hali ya hewa. {title}. {summary}. Kuwa tayari.",
-      default: "Sasisho muhimu. {title}. {summary}.",
+      weather: "Tahadhari ya hali ya hewa. {title}. {summary}. {location_suffix}Kuwa tayari.",
+      default: "Sasisho muhimu. {title}. {summary}. {location_suffix}",
     },
     medium: {
       emergency: "Nota ya dharura. {title}. {summary}.",
-      traffic: "Maelezo ya msongamano. {title}. {summary}.",
+      traffic: "{provider_prefix}Maelezo ya trafiki. {title}. {summary}. {location_suffix}",
+      security: "{provider_prefix}Nota ya usalama. {title}. {summary}. {location_suffix}",
       news: "Sasisho ya habari. {title}. {summary}.",
       weather: "Utabiri wa hali ya hewa. {title}. {summary}.",
-      default: "Sasisho. {title}. {summary}.",
+      default: "Sasisho. {title}. {summary}. {location_suffix}",
     },
     low: {
       emergency: "Nota ya dharura. {title}.",
-      traffic: "Nota ya msongamano. {title}.",
+      traffic: "{provider_prefix}Nota ya trafiki. {title}. {location_suffix}",
+      security: "Nota ya usalama. {title}. {location_suffix}",
       news: "Nota ya habari. {title}.",
       weather: "Nota ya hali ya hewa. {title}.",
-      default: "Nota. {title}.",
+      default: "Nota. {title}. {location_suffix}",
     },
   },
   ln: {
     critical: {
-      emergency: "Limbisi ya monene. {title}. {summary}. Tinda malamu ya ba mbulamatari.",
-      traffic: "Limbisi ya monene. {title}. {summary}. Kokota mingi. Epuka mboka.",
+      emergency: "Limbisi ya monene. {title}. {summary}. {location_suffix}Tinda malamu ya ba mbulamatari.",
+      traffic: "{provider_prefix}Limbisi ya monene ya kokota. {title}. {summary}. {location_suffix}Kokota mingi. Epuka mboka.",
+      security: "{provider_prefix}Limbisi ya monene ya kosala. {title}. {summary}. {location_suffix}Kenda kitoko.",
       news: "Nzela ya sika ya mbala. {title}. {summary}.",
-      weather: "Limbisi ya mbula. {title}. {summary}. Tinda kitoko.",
-      default: "Limbisi ya monene. {title}. {summary}.",
+      weather: "Limbisi ya mbula. {title}. {summary}. {location_suffix}Tinda kitoko.",
+      default: "Limbisi ya monene. {title}. {summary}. {location_suffix}",
     },
     high: {
-      emergency: "Sasita ya mbulamatari. {title}. {summary}. Kenda koyoka.",
-      traffic: "Sasita ya kokota. {title}. {summary}. Tinda kitoko.",
+      emergency: "Sasita ya mbulamatari. {title}. {summary}. {location_suffix}Kenda koyoka.",
+      traffic: "{provider_prefix}Sasita ya kokota. {title}. {summary}. {location_suffix}Tinda kitoko.",
+      security: "{provider_prefix}Sasita ya kosala. {title}. {summary}. {location_suffix}Kenda koyoka.",
       news: "Sasita ya monene. {title}. {summary}.",
-      weather: "Limbisi ya mbula. {title}. {summary}. Kenda koyoka.",
-      default: "Sasita ya monene. {title}. {summary}.",
+      weather: "Limbisi ya mbula. {title}. {summary}. {location_suffix}Kenda koyoka.",
+      default: "Sasita ya monene. {title}. {summary}. {location_suffix}",
     },
     medium: {
       emergency: "Nzela ya mbulamatari. {title}. {summary}.",
-      traffic: "Nzela ya kokota. {title}. {summary}.",
+      traffic: "{provider_prefix}Nzela ya kokota. {title}. {summary}. {location_suffix}",
+      security: "{provider_prefix}Nzela ya kosala. {title}. {summary}. {location_suffix}",
       news: "Nzela ya mbala. {title}. {summary}.",
       weather: "Nzela ya mbula. {title}. {summary}.",
-      default: "Sasita. {title}. {summary}.",
+      default: "Sasita. {title}. {summary}. {location_suffix}",
     },
     low: {
       emergency: "Nzela ya mbulamatari. {title}.",
-      traffic: "Nzela ya kokota. {title}.",
+      traffic: "{provider_prefix}Nzela ya kokota. {title}. {location_suffix}",
+      security: "Nzela ya kosala. {title}. {location_suffix}",
       news: "Nzela ya mbala. {title}.",
       weather: "Nzela ya mbula. {title}.",
-      default: "Nzela. {title}.",
+      default: "Nzela. {title}. {location_suffix}",
     },
   },
 };
 
+// ── Provider display names ────────────────────────────────────────────────
+const PROVIDER_DISPLAY = {
+  lezotraffic: { fr: 'Depuis LezoTraffic, ', en: 'From LezoTraffic, ', sw: 'Kutoka LezoTraffic, ', ln: 'Ku LezoTraffic, ' },
+};
+
 /**
- * Determine priority level from event priority
- * @param {number} priority - Event priority (1-10)
- * @returns {string} Priority level (critical, high, medium, low)
+ * Determine priority level from event priority.
  */
 function getPriorityLevel(priority) {
   if (priority <= 2) return 'critical';
@@ -143,111 +169,129 @@ function getPriorityLevel(priority) {
 }
 
 /**
- * Get template for an event
- * @param {Object} event - Normalized event
- * @param {string} language - Target language
- * @returns {string} Template string
+ * Get template for an event.
  */
 function getTemplate(event, language) {
   const priorityLevel = getPriorityLevel(event.priority);
   const category = event.category || 'default';
-  
+
   const languageTemplates = SCRIPT_TEMPLATES[language] || SCRIPT_TEMPLATES.en;
   const priorityTemplates = languageTemplates[priorityLevel] || languageTemplates.medium;
   const template = priorityTemplates[category] || priorityTemplates.default;
-  
+
   return template;
 }
 
 /**
- * Replace placeholders in template with event data
- * @param {string} template - Template string
- * @param {Object} event - Normalized event
- * @returns {string} Filled template
+ * Replace placeholders in template with event data.
  */
 function fillTemplate(template, event) {
   let filled = template;
-  
-  // Replace title
-  filled = filled.replace('{title}', event.title || '');
-  
-  // Replace summary (truncate if too long)
+
+  // Core fields
+  filled = filled.replace(/\{title\}/g, event.title || '');
   const summary = (event.summary || '').substring(0, 200);
-  filled = filled.replace('{summary}', summary);
-  
-  // Replace location if available
-  const location = [event.city, event.province, event.country]
-    .filter(Boolean)
-    .join(', ');
-  filled = filled.replace('{location}', location || '');
-  
-  // Replace time if available
+  filled = filled.replace(/\{summary\}/g, summary);
+
+  // Location
+  const locationParts = [event.city, event.province, event.country].filter(Boolean);
+  const location = locationParts.join(', ');
+  filled = filled.replace(/\{location\}/g, location || '');
+
+  // City / province individual
+  filled = filled.replace(/\{city\}/g, event.city || '');
+  filled = filled.replace(/\{province\}/g, event.province || '');
+
+  // Incident type / severity
+  filled = filled.replace(/\{incident_type\}/g, event.subcategory || event.category || '');
+  filled = filled.replace(/\{severity\}/g, getSeverityLabel(event.priority));
+
+  // Provider prefix — only for traffic/security categories
+  const lang = event._language || 'fr';
+  const providerKey = event.provider || '';
+  const isTrafficOrSecurity = event.category === 'traffic' || event.category === 'security' || event.category === 'transport';
+  if (isTrafficOrSecurity && PROVIDER_DISPLAY[providerKey]) {
+    filled = filled.replace(/\{provider_prefix\}/g, PROVIDER_DISPLAY[providerKey][lang] || '');
+  } else {
+    filled = filled.replace(/\{provider_prefix\}/g, '');
+  }
+
+  // Location suffix — formatted location string
+  if (location) {
+    const locPrefix = lang === 'fr' ? 'À ' : lang === 'en' ? 'In ' : lang === 'sw' ? 'Katika ' : 'Na ';
+    filled = filled.replace(/\{location_suffix\}/g, `${locPrefix}${location}. `);
+  } else {
+    filled = filled.replace(/\{location_suffix\}/g, '');
+  }
+
+  // Time
   const time = event.created_at ? new Date(event.created_at).toLocaleTimeString() : '';
-  filled = filled.replace('{time}', time);
-  
+  filled = filled.replace(/\{time\}/g, time);
+
+  // Clean up double spaces and trailing dots
+  filled = filled.replace(/\s+/g, ' ').replace(/\.\./g, '.').trim();
+
   return filled;
 }
 
 /**
- * Generate a script for a single event
- * @param {Object} event - Normalized event
- * @param {string} language - Target language (default: 'fr')
- * @returns {string} Generated script
+ * Map numeric priority to human-readable severity label.
  */
-function generateEventScript(event, language = 'fr') {
-  const template = getTemplate(event, language);
-  return fillTemplate(template, event);
+function getSeverityLabel(priority) {
+  if (priority <= 2) return 'high';
+  if (priority <= 5) return 'medium';
+  return 'low';
 }
 
 /**
- * Generate scripts for multiple events
- * @param {Array<Object>} events - Array of normalized events
- * @param {string} language - Target language (default: 'fr')
- * @returns {Array<string>} Array of generated scripts
+ * Generate a script for a single event.
+ * @param {Object} event - Normalized event (from events table or normalizer)
+ * @param {string} language - Target language code (fr, en, sw, ln)
+ * @returns {string} Generated script text
  */
-function generateEventScripts(events, language = 'fr') {
+export function generateEventScript(event, language = 'fr') {
+  if (event.category === 'geo') return '';
+  const enriched = { ...event, _language: language };
+  const template = getTemplate(enriched, language);
+  return fillTemplate(template, enriched);
+}
+
+/**
+ * Generate scripts for multiple events.
+ */
+export function generateEventScripts(events, language = 'fr') {
   return events.map(event => generateEventScript(event, language));
 }
 
 /**
- * Generate a combined script for multiple events
- * @param {Array<Object>} events - Array of normalized events
- * @param {string} language - Target language (default: 'fr')
- * @returns {string} Combined script
+ * Generate a combined script for multiple events (bulletin format).
  */
-function generateCombinedScript(events, language = 'fr') {
-  if (events.length === 0) {
-    return '';
-  }
-  
-  // Sort by priority (lower = higher priority)
-  const sortedEvents = [...events].sort((a, b) => a.priority - b.priority);
-  
-  // Generate individual scripts
-  const scripts = sortedEvents.map(event => generateEventScript(event, language));
-  
-  // Combine with appropriate separators
-  const separator = language === 'fr' ? '. ' : '. ';
-  return scripts.join(separator);
+export function generateCombinedScript(events, language = 'fr') {
+  if (events.length === 0) return '';
+
+  const sorted = [...events].sort((a, b) => a.priority - b.priority);
+  const scripts = sorted.map(event => generateEventScript(event, language));
+
+  return scripts.join('. ');
 }
 
 /**
- * Generate a broadcast script object
- * @param {Array<Object>} events - Array of normalized events
- * @param {string} language - Target language (default: 'fr')
- * @returns {Object} Broadcast script object
+ * Generate a broadcast script object.
  */
-function generateBroadcastScript(events, language = 'fr') {
+export function generateBroadcastScript(events, language = 'fr') {
   const scripts = generateEventScripts(events, language);
   const combined = generateCombinedScript(events, language);
-  
+
   return {
-    events: events.map(e => ({
+    events: events.map((e, i) => ({
       id: e.id,
       provider: e.provider,
       category: e.category,
+      subcategory: e.subcategory,
       priority: e.priority,
-      script: generateEventScript(e, language),
+      city: e.city,
+      province: e.province,
+      script: scripts[i],
     })),
     combined,
     language,
@@ -257,49 +301,83 @@ function generateBroadcastScript(events, language = 'fr') {
 }
 
 /**
- * Validate that a language is supported
- * @param {string} language - Language code
- * @returns {boolean} True if supported
+ * Generate a bulletin intro text for a channel.
+ * @param {string} language - Channel language (fr, en, sw, ln)
+ * @param {string} stationName - Station name
+ * @param {number} eventCount - Number of items in the bulletin
+ * @returns {string} Bulletin intro text
  */
-function isLanguageSupported(language) {
+export function generateBulletinIntro(language = 'fr', stationName = 'Radio Lezo', eventCount = 0) {
+  const intros = {
+    fr: `${stationName}. Bulletin d'information. ${eventCount} actualités à traiter.`,
+    en: `${stationName}. News bulletin. ${eventCount} stories to cover.`,
+    sw: `${stationName}. Ripoti ya habari. ${eventCount} habari za kushughulikia.`,
+    ln: `${stationName}. Tatomi ya monene. ${eventCount} nzela ya kosala.`,
+  };
+  return intros[language] || intros.en;
+}
+
+/**
+ * Generate a station ID text.
+ * @param {string} language - Channel language
+ * @param {string} stationName - Station name
+ * @returns {string} Station ID text
+ */
+export function generateStationIdText(language = 'fr', stationName = 'Radio Lezo') {
+  const texts = {
+    fr: `Vous écoutez ${stationName}. Restez à l'écoute.`,
+    en: `You're listening to ${stationName}. Stay tuned.`,
+    sw: `Unasikiliza ${stationName}. Endelea kusikiliza.`,
+    ln: `Oyo ke ${stationName}. Kenda kosenga.`,
+  };
+  return texts[language] || texts.en;
+}
+
+/**
+ * Generate a time announcement text.
+ * @param {string} language - Channel language
+ * @param {number} hour - Hour (0-23)
+ * @param {number} minute - Minute (0-59)
+ * @returns {string} Time announcement text
+ */
+export function generateTimeAnnouncement(language = 'fr', hour, minute) {
+  const pad = String(minute).padStart(2, '0');
+  const texts = {
+    fr: `Il est ${hour} heures${minute > 0 ? ` et ${minute} minutes` : ''}.`,
+    en: `The time is ${hour}:${pad}.`,
+    sw: `Saa ni ${hour}:${pad}.`,
+    ln: `Saa ke ${hour}:${pad}.`,
+  };
+  return texts[language] || texts.en;
+}
+
+/**
+ * Validate that a language is supported.
+ */
+export function isLanguageSupported(language) {
   return SCRIPT_TEMPLATES.hasOwnProperty(language);
 }
 
 /**
- * Get supported languages
- * @returns {Array<string>} Array of supported language codes
+ * Get supported languages.
  */
-function getSupportedLanguages() {
+export function getSupportedLanguages() {
   return Object.keys(SCRIPT_TEMPLATES);
 }
 
 /**
- * Add or update a template
- * @param {string} language - Language code
- * @param {string} priorityLevel - Priority level
- * @param {string} category - Event category
- * @param {string} template - Template string
+ * Add or update a template.
  */
-function setTemplate(language, priorityLevel, category, template) {
-  if (!SCRIPT_TEMPLATES[language]) {
-    SCRIPT_TEMPLATES[language] = {};
-  }
-  if (!SCRIPT_TEMPLATES[language][priorityLevel]) {
-    SCRIPT_TEMPLATES[language][priorityLevel] = {};
-  }
+export function setTemplate(language, priorityLevel, category, template) {
+  if (!SCRIPT_TEMPLATES[language]) SCRIPT_TEMPLATES[language] = {};
+  if (!SCRIPT_TEMPLATES[language][priorityLevel]) SCRIPT_TEMPLATES[language][priorityLevel] = {};
   SCRIPT_TEMPLATES[language][priorityLevel][category] = template;
 }
 
 export {
-  generateEventScript,
-  generateEventScripts,
-  generateCombinedScript,
-  generateBroadcastScript,
   getTemplate,
   fillTemplate,
   getPriorityLevel,
-  isLanguageSupported,
-  getSupportedLanguages,
-  setTemplate,
+  getSeverityLabel,
   SCRIPT_TEMPLATES,
 };

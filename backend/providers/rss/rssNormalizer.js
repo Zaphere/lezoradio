@@ -175,6 +175,22 @@ function normalizeRSSItem(rssItem, feedConfig) {
     .replace(/&nbsp;/g, ' ')
     .substring(0, 2000);
   
+  // Convert pubDate to ISO 8601 format for Postgres timestamptz compatibility
+  // rss-parser provides isoDate (already ISO 8601), prefer that over raw pubDate (RFC 2822)
+  let occurredAt = null;
+  if (rssItem.isoDate) {
+    occurredAt = rssItem.isoDate;
+  } else if (rssItem.pubDate) {
+    try {
+      const parsed = new Date(rssItem.pubDate);
+      if (!isNaN(parsed.getTime())) {
+        occurredAt = parsed.toISOString();
+      }
+    } catch (e) {
+      // Skip unparseable dates
+    }
+  }
+  
   return {
     provider: 'rss',
     provider_record_id: providerEventId,
@@ -193,7 +209,7 @@ function normalizeRSSItem(rssItem, feedConfig) {
     status: 'active',
     verified: false,
     language,
-    occurred_at: rssItem.pubDate || null,
+    occurred_at: occurredAt,
     expires_at: null,
     metadata: {
       feed_name: feedConfig.name,

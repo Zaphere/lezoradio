@@ -301,6 +301,24 @@ export async function backfillMissingRadioScripts(buildScript) {
 // ============================================================================
 
 /**
+ * Safely convert any date value to ISO 8601 string for Postgres timestamptz.
+ * Handles RFC 2822 (from RSS feeds), ISO 8601, and other Date-parseable formats.
+ * @param {string|Date|null|undefined} value - Date value to convert
+ * @returns {string|null} ISO 8601 string or null
+ */
+function safeTimestamp(value) {
+  if (!value) return null;
+  // Already ISO 8601 — pass through
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) return value;
+  try {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Insert a unified event from any provider
  * Handles deduplication using provider + provider_record_id unique constraint
  * @param {Object} event - Normalized event object
@@ -330,8 +348,8 @@ export async function insertEvent(event) {
       raw_payload: event.raw_payload || {},
       raw_payload_version: event.raw_payload_version != null ? event.raw_payload_version : 1,
       api_version: event.api_version || null,
-      occurred_at: event.occurred_at || event.created_at || null,
-      expires_at: event.expires_at || null,
+      occurred_at: safeTimestamp(event.occurred_at || event.created_at),
+      expires_at: safeTimestamp(event.expires_at),
       created_at: event.created_at || new Date().toISOString(),
       updated_at: event.updated_at || new Date().toISOString(),
     };
@@ -440,7 +458,7 @@ export async function updateProviderConfig(providerId, config) {
  */
 export async function logProviderSync(syncData) {
   try {
-    const { error } = await supabase.from('provider_sync_logs').insert({
+    const payload = {
       provider: syncData.provider,
       endpoint: syncData.endpoint || null,
       status: syncData.status,
@@ -450,7 +468,25 @@ export async function logProviderSync(syncData) {
       items_skipped: syncData.items_skipped || 0,
       duration_ms: syncData.duration_ms || 0,
       errors: syncData.errors ? String(syncData.errors).substring(0, 2000) : null,
-    });
+    };
+
+    // Strip columns already known to be missing from previous attempts
+    for (const col of _missingSyncLogCols) {
+      delete payload[col];
+    }
+
+    let { error } = await supabase.from('provider_sync_logs').insert(payload);
+
+    // Self-healing: if PostgREST rejects a column, strip it and retry
+    let retries = 0;
+    while (error && error.message && error.message.includes('column') && retries < 10) {
+      const match = error.message.match(/Could not find the '([^']+)' column/);
+      if (!match) break;
+      _missingSyncLogCols.add(match[1]);
+      delete payload[match[1]];
+      ({ error } = await supabase.from('provider_sync_logs').insert(payload));
+      retries++;
+    }
 
     if (error) {
       console.error('Error logging provider sync:', error.message);
@@ -459,6 +495,9 @@ export async function logProviderSync(syncData) {
     console.error('Error logging provider sync:', err.message);
   }
 }
+
+// Columns known to be absent from provider_sync_logs (populated on first failure)
+const _missingSyncLogCols = new Set();
 
 /**
  * Get recent sync logs for a provider

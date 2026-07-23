@@ -1,18 +1,18 @@
 export const INCIDENT_TYPES = {
-  embouteillage: { category: 'traffic', subcategory: 'traffic_jam' },
-  accident: { category: 'traffic', subcategory: 'collision' },
-  collision: { category: 'traffic', subcategory: 'collision' },
-  carambolage: { category: 'traffic', subcategory: 'pileup' },
-  travaux: { category: 'traffic', subcategory: 'roadwork' },
-  'route_fermée': { category: 'traffic', subcategory: 'road_closed' },
-  'route_barree': { category: 'traffic', subcategory: 'road_closed' },
-  'véhicule_en_panne': { category: 'traffic', subcategory: 'breakdown' },
-  panne: { category: 'traffic', subcategory: 'breakdown' },
-  'feux_hs': { category: 'traffic', subcategory: 'traffic_light_failure' },
-  feux_tricolores_hs: { category: 'traffic', subcategory: 'traffic_light_failure' },
-  animaux: { category: 'traffic', subcategory: 'animal_crossing' },
-  nid_de_poule: { category: 'traffic', subcategory: 'pothole' },
-  dos_d_ane: { category: 'traffic', subcategory: 'speed_bump' },
+  embouteillage: { category: 'traffic', subcategory: 'congestion' },
+  accident: { category: 'traffic', subcategory: 'accident' },
+  collision: { category: 'traffic', subcategory: 'accident' },
+  carambolage: { category: 'traffic', subcategory: 'accident' },
+  travaux: { category: 'traffic', subcategory: 'road_block' },
+  'route_fermée': { category: 'traffic', subcategory: 'road_block' },
+  'route_barree': { category: 'traffic', subcategory: 'road_block' },
+  'véhicule_en_panne': { category: 'traffic', subcategory: 'incident' },
+  panne: { category: 'traffic', subcategory: 'incident' },
+  'feux_hs': { category: 'traffic', subcategory: 'incident' },
+  feux_tricolores_hs: { category: 'traffic', subcategory: 'incident' },
+  animaux: { category: 'traffic', subcategory: 'incident' },
+  nid_de_poule: { category: 'traffic', subcategory: 'road_block' },
+  dos_d_ane: { category: 'traffic', subcategory: 'incident' },
   urgence: { category: 'emergency', subcategory: 'general' },
   incendie: { category: 'emergency', subcategory: 'fire' },
   feu: { category: 'emergency', subcategory: 'fire' },
@@ -45,9 +45,9 @@ export const SEVERITY_MAP = {
 };
 
 export function mapIncidentType(frenchType) {
-  if (!frenchType) return { category: 'traffic', subcategory: 'general' };
+  if (!frenchType) return { category: 'traffic', subcategory: 'incident' };
   const normalized = frenchType.toLowerCase().replace(/[\s_-]+/g, '_').trim();
-  return INCIDENT_TYPES[normalized] || { category: 'traffic', subcategory: 'general' };
+  return INCIDENT_TYPES[normalized] || { category: 'traffic', subcategory: 'incident' };
 }
 
 export function mapSeverity(severity) {

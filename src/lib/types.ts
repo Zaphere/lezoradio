@@ -3,6 +3,7 @@ export type NewsCategory = 'local' | 'regional' | 'global' | 'traffic' | 'alert'
 export interface NewsItem {
   id: string;
   feed_id: string;
+  provider?: string;
   title: string;
   description: string;
   content: string;
@@ -70,17 +71,6 @@ export function getFlagEmoji(countryCode: string): string {
     .map(char => 0x1F1E6 + char.charCodeAt(0) - 65);
   return String.fromCodePoint(...codePoints);
 }
-
-export const TRANSITIONS = [
-  "Next update coming your way…",
-  "In regional news today…",
-  "Moving to traffic updates…",
-  "Here's what's happening now…",
-  "Now for the latest reports…",
-  "Continuing with today's stories…",
-  "And now from our news desk…",
-  "Let's look at what else is making headlines…",
-];
 
 export interface StationRecord {
   id: string;
@@ -167,6 +157,49 @@ export interface ITTSProvider {
   onError?: (err: any) => void;
 }
 
+// ============================================================================
+// NowPlaying — maps 1:1 to `radio_station_state` table (v3)
+// ============================================================================
+
+export type SegmentType =
+  | 'intro' | 'track' | 'tts' | 'jingle' | 'bulletin'
+  | 'announcement' | 'ambient' | 'silence' | 'transition';
+
+export type TransitionType = 'crossfade' | 'duck' | 'cut' | 'next';
+
+export interface NowPlaying {
+  id: string;
+  channelId: string;
+  stationId: string;
+  segmentType: SegmentType;
+  segmentId: string | null;
+  audioUrl: string | null;
+  audioType: 'stream' | 'tts' | 'jingle' | 'ambient' | null;
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  durationSeconds: number;
+  startedAt: string;
+  transitionType: TransitionType | null;
+  transitionDurationMs: number;
+  duckVolume: number | null;
+  nextSegmentType: SegmentType | null;
+  nextAudioUrl: string | null;
+  nextTitle: string | null;
+  nextArtist: string | null;
+  nextDurationSeconds: number | null;
+  language: string;
+  voiceId: string | null;
+  version: number;
+  generatedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  provider: string | null;
+  city: string | null;
+  province: string | null;
+  description: string | null;
+}
+
 export type FeedHealth = 'healthy' | 'warning' | 'offline' | 'unknown';
 
 export interface DiagnosticResult {
@@ -205,7 +238,7 @@ export interface IScriptGenerator {
   generate(items: BroadcastItem[]): Promise<BroadcastScript>;
 }
 
-export type BroadcastMode = 'LIVE_NEWS' | 'MUSIC_FILL' | 'GLOBAL_BULLETIN' | 'EMERGENCY';
+export type BroadcastMode = 'IDLE' | 'LIVE_NEWS' | 'MUSIC_FILL' | 'GLOBAL_BULLETIN' | 'EMERGENCY';
 
 export interface StationTimeInfo {
   timezone: string;

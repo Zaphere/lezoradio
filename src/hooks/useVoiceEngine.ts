@@ -1,3 +1,4 @@
+// @deprecated — archived in Phase 1 (2026-07-14). Replaced by backend engine modules and frontend useNowPlaying/useAudioExecutor.
 import { useRef, useCallback, useState, useEffect } from 'react';
 import type { VoiceOption } from '../lib/types';
 import { ElevenLabsTTS } from '../services/tts/elevenlabsTTS';

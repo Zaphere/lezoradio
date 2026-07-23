@@ -1,6 +1,7 @@
+// @deprecated — archived in Phase 1 (2026-07-14). Replaced by backend engine modules and frontend useNowPlaying/useAudioExecutor.
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { RadioScript, Alert, QueueItem, BroadcastItem, VoiceOption, NewsItem, NewsCategory, BroadcastStateValue } from '../lib/types';
-import { TRANSITIONS } from '../lib/types';
+import { TRANSITIONS } from '../lib/transitions';
 import { fetchRadioScripts, fetchAlerts, isDatabaseReady, markScriptAsRead, markNewsItemProcessed, fetchNewsItems } from '../lib/supabase';
 import { newsItemToSpeech, isLezoTrafficItem, lezoTrafficItemToSpeech, lezoTrafficSegmentIntro } from '../lib/newsText';
 import {
@@ -13,7 +14,7 @@ import {
   savePlaybackIndex,
 } from '../lib/broadcastProgress';
 import { useVoiceEngine } from './useVoiceEngine';
-import { TrackAudio, PRE_TRACK_SPEECH_GAP_MS } from '../services/audio/TrackAudio';
+import { TrackAudio, getRandomSpeechGap } from '../services/audio/TrackAudio';
 import { IntroAudio } from '../services/audio/IntroAudio';
 import { BackgroundAudio } from '../services/audio/BackgroundAudio';
 import {
@@ -22,6 +23,8 @@ import {
   introBeforeTrack,
   entertainmentSegmentClose,
 } from '../lib/entertainmentConfig';
+import { pickLine, STATION_IDS } from '../lib/broadcastFlowSupervisor';
+import { COMING_UP_TEASERS } from '../lib/transitions';
 
 type EntertainmentPhase = 'track' | 'after-track' | 'before-track' | 'closing';
 
@@ -89,6 +92,10 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
   const entertainmentPhaseRef = useRef<EntertainmentPhase>('track');
   const playbackLockRef = useRef(false);
   const [isPlaybackLocked, setIsPlaybackLocked] = useState(false);
+  const stationIdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastStationIdTimeRef = useRef<number>(0);
+  const storyCountRef = useRef(0);
+  const timeAnnouncementTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const setPlaybackLock = useCallback((val: boolean) => {
     playbackLockRef.current = val;
@@ -185,6 +192,61 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
     }, BROADCAST_SEGMENT_MS);
   }, [voiceStop, clearSegmentTimer]);
 
+  const scheduleStationId = useCallback(() => {
+    if (stationIdTimerRef.current) {
+      clearTimeout(stationIdTimerRef.current);
+    }
+    
+    const randomInterval = 10 * 60 * 1000 + Math.random() * 5 * 60 * 1000; // 10-15 minutes
+    stationIdTimerRef.current = setTimeout(() => {
+      if (!isLiveRef.current) return;
+      if (isMusicModeRef.current) return;
+      if (isIntroActiveRef.current) return;
+      if (voiceStateRef.current !== 'idle') return;
+      
+      const stationId = pickLine(STATION_IDS, stationName);
+      voiceSpeak(stationId);
+      lastStationIdTimeRef.current = Date.now();
+      scheduleStationId();
+    }, randomInterval);
+  }, [stationName, voiceSpeak]);
+
+  const clearStationIdTimer = useCallback(() => {
+    if (stationIdTimerRef.current) {
+      clearTimeout(stationIdTimerRef.current);
+      stationIdTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleTimeAnnouncement = useCallback(() => {
+    if (timeAnnouncementTimerRef.current) {
+      clearTimeout(timeAnnouncementTimerRef.current);
+    }
+    
+    const randomInterval = 20 * 60 * 1000 + Math.random() * 10 * 60 * 1000; // 20-30 minutes
+    timeAnnouncementTimerRef.current = setTimeout(() => {
+      if (!isLiveRef.current) return;
+      if (isMusicModeRef.current) return;
+      if (isIntroActiveRef.current) return;
+      if (voiceStateRef.current !== 'idle') return;
+      
+      const now = new Date();
+      const hours = now.getHours();
+      const minutes = now.getMinutes();
+      const timeStr = `${hours}:${minutes.toString().padStart(2, '0')}`;
+      const timeAnnouncement = `It's ${timeStr}. You're listening to ${stationName}.`;
+      voiceSpeak(timeAnnouncement);
+      scheduleTimeAnnouncement();
+    }, randomInterval);
+  }, [stationName, voiceSpeak]);
+
+  const clearTimeAnnouncementTimer = useCallback(() => {
+    if (timeAnnouncementTimerRef.current) {
+      clearTimeout(timeAnnouncementTimerRef.current);
+      timeAnnouncementTimerRef.current = null;
+    }
+  }, []);
+
   const stopMusic = useCallback(() => {
     trackRef.current?.stop();
     entertainmentActiveRef.current = false;
@@ -209,7 +271,7 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
       setEntertainmentTrack(null);
       setTimeout(() => {
         voiceSpeak(commentaryAfterTrack(track, stationName));
-      }, PRE_TRACK_SPEECH_GAP_MS);
+      }, getRandomSpeechGap());
     });
   }, [stationName, voiceSpeak]);
 
@@ -236,19 +298,19 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
         entertainmentPhaseRef.current = 'before-track';
         setTimeout(() => {
           voiceSpeak(introBeforeTrack(ENTERTAINMENT_TRACKS[nextIndex], stationName));
-        }, PRE_TRACK_SPEECH_GAP_MS);
+        }, getRandomSpeechGap());
       } else {
         entertainmentPhaseRef.current = 'closing';
         setTimeout(() => {
           voiceSpeak(entertainmentSegmentClose(stationName));
-        }, PRE_TRACK_SPEECH_GAP_MS);
+        }, getRandomSpeechGap());
       }
       return;
     }
 
     if (phase === 'before-track') {
       entertainmentIndexRef.current = index + 1;
-      setTimeout(() => playEntertainmentTrack(index + 1), PRE_TRACK_SPEECH_GAP_MS);
+      setTimeout(() => playEntertainmentTrack(index + 1), getRandomSpeechGap());
       return;
     }
 
@@ -278,6 +340,27 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
 
   const scheduleEntertainmentIfIdle = useCallback(() => {
     clearFallbackTimer();
+    
+    // Variable delay based on playlist length - shorter delay if few stories, longer if many
+    const playlistLength = playlistRef.current.length;
+    const unplayedCount = playlistRef.current.filter(item => !playedIdsRef.current.has(item.id)).length;
+    
+    // Base delay is 8 seconds, but adjust based on content availability
+    let adjustedDelay = ENTERTAINMENT_DELAY;
+    if (unplayedCount === 0 && playlistLength > 0) {
+      // All stories played, shorter delay to entertainment
+      adjustedDelay = 5000;
+    } else if (playlistLength >= 10) {
+      // Plenty of content, longer delay
+      adjustedDelay = 12000;
+    } else if (playlistLength >= 5) {
+      // Moderate content, medium delay
+      adjustedDelay = 8000;
+    } else {
+      // Limited content, shorter delay
+      adjustedDelay = 5000;
+    }
+    
     fallbackTimerRef.current = setTimeout(() => {
       if (!isLiveRef.current) return;
       if (isMusicModeRef.current) return;
@@ -288,7 +371,7 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
       isMusicModeRef.current = true;
       awaitingEntertainmentRef.current = true;
       voiceSpeak(FALLBACK_MESSAGE);
-    }, ENTERTAINMENT_DELAY);
+    }, adjustedDelay);
   }, [voiceState, voiceSpeak, clearFallbackTimer]);
 
   scheduleEntertainmentRef.current = scheduleEntertainmentIfIdle;
@@ -335,6 +418,12 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
     const isLezo = isLezoTrafficItem(item);
     const text = isLezo ? lezoTrafficItemToSpeech(item) : newsItemToSpeech(item);
     const isFirst = !!(options?.stationIntro);
+    
+    // Insert teaser every 3-5 stories
+    storyCountRef.current += 1;
+    const shouldTease = storyCountRef.current > 0 && storyCountRef.current % 4 === 0;
+    const teaser = shouldTease ? COMING_UP_TEASERS[Math.floor(Math.random() * COMING_UP_TEASERS.length)] : null;
+    
     const transition = isFirst
       ? `Now broadcasting from ${stationName}.`
       : isLezo
@@ -344,7 +433,8 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
     const speak = () => {
       isIntroActiveRef.current = false;
       setIsIntroActive(false);
-      voiceSpeak(text, transition);
+      const fullTransition = teaser ? `${teaser} ${transition}` : transition;
+      voiceSpeak(text, fullTransition);
       scheduleSegmentEnd();
     };
 
@@ -632,6 +722,9 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
         pollingRef.current = setInterval(tick, 15000);
       }
 
+      scheduleStationId();
+      scheduleTimeAnnouncement();
+
       if (!startedPlaying) {
         if (playlistRef.current.length > 0) {
           beginFromNextUnplayed(true);
@@ -647,7 +740,7 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
       setDbReady(false);
       scheduleEntertainmentIfIdle();
     }
-  }, [tick, beginFromNextUnplayed, scheduleEntertainmentIfIdle, stopMusic, clearFallbackTimer, startNewsPlaylist, stationRegion, newsCategory]);
+  }, [tick, beginFromNextUnplayed, scheduleEntertainmentIfIdle, stopMusic, clearFallbackTimer, startNewsPlaylist, stationRegion, newsCategory, scheduleStationId, scheduleTimeAnnouncement]);
 
   const stop = useCallback(() => {
     setPlaybackLock(false);
@@ -655,6 +748,8 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
       savePlaybackIndex(stationId, newsCategory, currentIndexRef.current);
     }
     clearSegmentTimer();
+    clearStationIdTimer();
+    clearTimeAnnouncementTimer();
     setIsLive(false);
     isLiveRef.current = false;
     stopMusic();
@@ -665,7 +760,7 @@ export function useRadioEngine({ stationId, stationName, stationRegion, newsCate
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
-  }, [voiceStop, stopMusic, stopIntro, clearFallbackTimer, clearSegmentTimer, stationId, newsCategory]);
+  }, [voiceStop, stopMusic, stopIntro, clearFallbackTimer, clearSegmentTimer, clearStationIdTimer, clearTimeAnnouncementTimer, stationId, newsCategory]);
 
   const simulateNews = useCallback((options?: { withIntro?: boolean }) => {
     const text = testData?.newsText || `This is a simulated news broadcast for ${stationName}. In today's headlines, developments continue across the region. Officials report progress on key initiatives. Community leaders respond to recent announcements.`;

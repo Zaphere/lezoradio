@@ -1,12 +1,13 @@
+// @deprecated — archived in Phase 1 (2026-07-14). Replaced by backend engine modules and frontend useNowPlaying/useAudioExecutor.
 import { useRef, useEffect, useState, useCallback } from 'react';
 import type { BroadcastStateValue } from '../lib/types';
 import {
   BFS_CONFIG,
-  TRANSITIONS,
   STATION_IDS,
   BRIDGE_INTROS,
   pickLine,
 } from '../lib/broadcastFlowSupervisor';
+import { TRANSITIONS } from '../lib/transitions';
 
 type VoiceState = 'idle' | 'speaking' | 'paused';
 

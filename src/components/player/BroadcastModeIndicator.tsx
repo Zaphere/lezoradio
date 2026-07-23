@@ -6,6 +6,11 @@ interface Props {
 }
 
 const MODE_CONFIG: Record<BroadcastMode, { label: string; color: string; pulse: boolean }> = {
+  IDLE: {
+    label: 'OFFLINE',
+    color: 'bg-gray-500/80 text-white',
+    pulse: false,
+  },
   LIVE_NEWS: {
     label: 'LIVE NEWS',
     color: 'bg-primary text-white',

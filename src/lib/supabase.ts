@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { StationRecord, ContentSource } from './types';
+import type { StationRecord, ContentSource, NewsCategory } from './types';
 import { getRegionBySlug } from './drcRegions';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -27,43 +27,101 @@ export async function isDatabaseReady(): Promise<boolean> {
   }
 }
 
-const _silentFetch = async <T>(fn: () => any): Promise<T[]> => {
-  if (_dbReady === false) return [];
+const _silentFetch = async <T>(fn: () => any, label?: string): Promise<T[]> => {
+  if (_dbReady === false) {
+    console.warn(`[Supabase] Skipping query (${label ?? 'unknown'}): database not ready`);
+    return [];
+  }
   try {
     const { data, error } = await fn();
     if (error) {
-      console.warn('Supabase query error:', error.message);
+      console.warn(`Supabase query error${label ? ` (${label})` : ''}:`, error.message);
       return [];
     }
     return (data || []) as T[];
-  } catch {
+  } catch (err) {
+    console.warn(`Supabase query exception${label ? ` (${label})` : ''}:`, err);
     return [];
   }
 };
 
+function getCategoryQueryValues(category?: string): string[] {
+  const NEWS_CATEGORIES = ['news', 'global', 'regional', 'local', 'traffic', 'alert', 'weather', 'agriculture', 'business', 'sports', 'geo', 'security', 'emergency', 'transport', 'event', 'government', 'health', 'tourism'];
+
+  if (!category) return NEWS_CATEGORIES;
+
+  const normalized = category.toLowerCase();
+  switch (normalized) {
+    case 'regional':
+      return ['regional', 'local', 'news'];
+    case 'global':
+      return ['global', 'news'];
+    case 'traffic':
+      return ['traffic'];
+    case 'alert':
+      return ['alert', 'emergency'];
+    case 'local':
+      return ['local', 'regional', 'news'];
+    default:
+      return NEWS_CATEGORIES;
+  }
+}
+
+function normalizeNewsCategory(rawCategory: string | undefined, preferredCategory?: string): NewsCategory {
+  const normalized = (rawCategory || '').toLowerCase();
+  if (!normalized) return (preferredCategory as NewsCategory) || 'regional';
+
+  if (preferredCategory) {
+    switch (preferredCategory.toLowerCase()) {
+      case 'regional':
+        if (['regional', 'local', 'news'].includes(normalized)) return 'regional';
+        break;
+      case 'global':
+        if (['global', 'news'].includes(normalized)) return 'global';
+        break;
+      case 'traffic':
+        if (normalized === 'traffic') return 'traffic';
+        break;
+      case 'alert':
+        if (['alert', 'emergency'].includes(normalized)) return 'alert';
+        break;
+      case 'local':
+        if (['local', 'regional', 'news'].includes(normalized)) return 'local';
+        break;
+    }
+  }
+
+  if (['local', 'regional', 'global', 'traffic', 'alert'].includes(normalized)) {
+    return normalized as NewsCategory;
+  }
+  if (normalized === 'emergency') return 'alert';
+  return 'regional';
+}
+
 export async function fetchNewsItems(region?: string, category?: string): Promise<any[]> {
-  const NEWS_CATEGORIES = ['news', 'global', 'regional', 'local', 'traffic', 'alert', 'weather', 'agriculture', 'business', 'sports'];
+  const categoriesToQuery = getCategoryQueryValues(category);
 
   const events = await _silentFetch(async () => {
     let q = supabase.from('events').select('*').gte('created_at', retentionCutoff()).order('created_at', { ascending: false }).limit(50);
     if (region) q = q.eq('province', region);
     if (category) {
-      q = q.eq('category', category);
+      q = q.in('category', categoriesToQuery);
     } else {
-      q = q.in('category', NEWS_CATEGORIES);
+      q = q.in('category', categoriesToQuery);
     }
     return q;
-  });
+  }, 'events');
 
   const mapped = events.map((event: any) => ({
     id: event.id,
     feed_id: event.provider,
+    provider: event.provider,
     title: event.title,
     description: event.summary || '',
     content: event.description || '',
     url: event.metadata?.url || '',
     region: event.province || event.country || 'global',
-    category: event.category || 'global',
+    category: normalizeNewsCategory(event.category, category),
     priority: event.priority,
     city: event.city || event.metadata?.city,
     province: event.province,
@@ -83,9 +141,13 @@ export async function fetchNewsItems(region?: string, category?: string): Promis
         q = q.eq('region', region);
       }
     }
-    if (category) q = q.eq('category', category);
+    if (category) {
+      q = q.in('category', categoriesToQuery);
+    } else {
+      q = q.in('category', categoriesToQuery);
+    }
     return q;
-  });
+  }, 'news_items');
 
   const mappedNews = newsItems.map((item: any) => ({
     id: item.id,
@@ -95,7 +157,7 @@ export async function fetchNewsItems(region?: string, category?: string): Promis
     content: item.content || '',
     url: item.url || '',
     region: item.region || 'global',
-    category: item.category || 'global',
+    category: normalizeNewsCategory(item.category, category),
     published_at: item.published_at || item.ingested_at,
     ingested_at: item.ingested_at,
     is_processed: item.is_processed || false,
