@@ -245,29 +245,37 @@ export class AudioManager {
     this.stopTrack(false);
 
     const layer = this.layers.track;
-    const audio = new Audio(url);
+    const audio = new Audio();
     audio.preload = 'auto';
-    audio.volume = 0;
+    audio.src = url;
+
     layer.element = audio;
     layer.state = 'loading';
+    layer.volume = 1;
+    this.applyVolume('track');
 
     const handleEnded = () => {
       layer.state = 'idle';
-      this.fadeTo('track', 0, 700, () => {
-        audio.pause();
-        audio.currentTime = 0;
-        layer.element = null;
-        setTimeout(() => this.onTrackEnd?.(), TIMING.PRE_TRACK_GAP_MS);
-      });
+      audio.pause();
+      audio.currentTime = 0;
+      layer.element = null;
+      setTimeout(() => this.onTrackEnd?.(), TIMING.PRE_TRACK_GAP_MS);
     };
 
     audio.addEventListener('ended', handleEnded, { once: true });
-    audio.addEventListener('error', () => handleEnded(), { once: true });
+    audio.addEventListener('error', (e) => {
+      console.error('[AudioManager] Track audio load error for URL:', url, e);
+      handleEnded();
+    }, { once: true });
 
     const startPlayback = () => {
       layer.state = 'playing';
-      this.fadeTo('track', 1, 700);
-      void audio!.play().catch(() => handleEnded());
+      layer.volume = 1;
+      this.applyVolume('track');
+      void audio.play().catch(err => {
+        console.warn('[AudioManager] Presenter track playback prevented:', err.message);
+        handleEnded();
+      });
     };
 
     if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {

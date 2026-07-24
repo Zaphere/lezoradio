@@ -1,7 +1,7 @@
 // backend/engine/radioEngine.js
 // Top-level orchestrator — event-driven, coordinates all engine modules.
 
-import { ENGINE_VERSION, SEGMENT_TYPES, DEFAULT_STATE } from './constants.js';
+import { ENGINE_VERSION, SEGMENT_TYPES, DEFAULT_STATE, getCurrentEntertainmentMusicUrl } from './constants.js';
 import * as stationController from './stationController.js';
 import * as languageController from './languageController.js';
 import * as contentNormalizer from './contentNormalizer.js';
@@ -12,6 +12,7 @@ import * as eventListener from './eventListener.js';
 import * as eventScheduler from './eventScheduler.js';
 import * as ttsGenerator from './ttsGenerator.js';
 import * as radioWsServer from './radioWsServer.js';
+import { supabase } from '../supabaseClient.js';
 import {
   generateEventScript,
   generateBulletinIntro,
@@ -24,6 +25,7 @@ class RadioEngine {
     this.channels = new Map(); // channelId -> channelState
     this.running = false;
     this.refreshInterval = null;
+    this.backgroundRotationInterval = null;
   }
 
   /**
@@ -41,12 +43,30 @@ class RadioEngine {
       languageController.loadVoices(),
     ]);
 
-    const channels = stationController.getAllChannels();
+    let channels = stationController.getAllChannels();
     console.log(`[${new Date().toISOString()}] [radioEngine] Loaded ${channels.length} channels: ${channels.map(c => c.channel_id).join(', ')}`);
     if (channels.length === 0) {
-      console.warn(`[radioEngine] No active channels found. Engine idle.`);
-      return;
+      console.log(`[${new Date().toISOString()}] [radioEngine] No channels in station_channels — attempting auto-seed...`);
+      const seeded = await this.autoSeedChannels();
+      if (!seeded) {
+        console.warn(`[radioEngine] Auto-seed failed. Engine idle.`);
+        return;
+      }
+      // Reload caches after seeding
+      await Promise.all([
+        stationController.refreshCache(),
+        languageController.loadVoices(),
+      ]);
+      channels = stationController.getAllChannels();
+      if (channels.length === 0) {
+        console.warn(`[radioEngine] Still no channels after auto-seed. Engine idle.`);
+        return;
+      }
+      console.log(`[${new Date().toISOString()}] [radioEngine] Auto-seeded ${channels.length} channels: ${channels.map(c => c.channel_id).join(', ')}`);
     }
+
+    // Ensure voices exist for all channels — seed if missing
+    await this.ensureVoices(channels);
 
     // Initialize state for each channel
     for (const ch of channels) {
@@ -71,12 +91,20 @@ class RadioEngine {
     // Start periodic refresh
     this.refreshInterval = setInterval(() => this.refresh(), 5 * 60 * 1000);
 
+    // Start background music rotation (every 1 hour)
+    this.backgroundRotationInterval = setInterval(() => this.rotateBackgroundMusic(), 1 * 60 * 60 * 1000);
+
     this.running = true;
     console.log(`[${new Date().toISOString()}] [radioEngine] Engine started with ${channels.length} channels`);
 
     // Start WebSocket server if HTTP server is available
     if (httpServer) {
       radioWsServer.startRadioWsServer(httpServer, '/ws/radio');
+    }
+
+    // Write initial ambient (background music) for each channel so frontend has something to play
+    for (const ch of channels) {
+      this.writeAmbientSegment(ch.channel_id);
     }
 
     // Trigger initial bulletins so there's content for the first listener
@@ -146,9 +174,16 @@ class RadioEngine {
     const channel = stationController.getChannel(channelId);
     const language = channel?.language || this.channels.get(channelId)?.language || 'fr';
     const stationName = channel?.station_name || 'Radio Lezo';
-    const voice = languageController.resolveVoice(stationId, language, 'bulletin');
+    let voice = languageController.resolveVoice(stationId, language, 'bulletin');
 
-    const events = await queueManager.getUnplayedEvents(channelId, 10);
+    // Fallback: use channel's primary_voice_id if cache lookup failed
+    if (!voice && channel?.primary_voice_id) {
+      voice = { voice_id: channel.primary_voice_id, language, style: 'formal' };
+      console.log(`[${new Date().toISOString()}] [radioEngine] Using channel primary_voice_id: ${channel.primary_voice_id} for ${channelId}/${language}`);
+    }
+
+    // Limit to 3 events per bulletin to avoid exceeding ElevenLabs 5000 character limit
+    const events = await queueManager.getUnplayedEvents(channelId, 3);
     console.log(`[${new Date().toISOString()}] [radioEngine] Found ${events.length} unplayed events for ${channelId}`);
 
     let bulletinText;
@@ -168,8 +203,11 @@ class RadioEngine {
 
       if (ttsResult) {
         console.log(`[${new Date().toISOString()}] [radioEngine] TTS generated for ${channelId}: ${ttsResult.audioUrl?.substring(0, 80)}`);
-        // Determine primary source attribution from top event
         const topEvent = events[0] || {};
+
+        // Estimate duration based on text length (avg 15 chars/sec + 2s buffer)
+        const durationSeconds = Math.ceil(bulletinText.length / 15) + 2;
+        console.log(`[${new Date().toISOString()}] [radioEngine] Estimated bulletin duration: ${durationSeconds}s (${bulletinText.length} chars)`);
 
         this.updateCurrentSegment(channelId, {
           segment_type: SEGMENT_TYPES.BULLETIN,
@@ -177,7 +215,7 @@ class RadioEngine {
           audio_url: ttsResult.audioUrl,
           audio_type: 'tts',
           title: label || `${stationName} Bulletin`,
-          duration_seconds: Math.max(30, events.length * 8),
+          duration_seconds: durationSeconds,
           language,
           voice_id: voice.voice_id,
           // Source attribution
@@ -187,42 +225,47 @@ class RadioEngine {
           description: bulletinText.substring(0, 500),
         });
 
-        // Mark events as played
+        // Mark events as played PER CHANNEL (do NOT mark global status as 'processed' —
+        // that would starve all future bulletins. queue_played_items handles per-channel tracking.)
         for (const event of events) {
-          await queueManager.markPlayed(channelId, 'event', event.id, {
-            provider: event.provider,
-            category: event.category,
-          });
+          await queueManager.markPlayed(channelId, 'event', event.id);
+          // Also mark linked radio_scripts as read
+          const { data: linkedScripts } = await supabase
+            .from('radio_scripts')
+            .select('id')
+            .eq('news_item_id', event.id);
+          if (linkedScripts && linkedScripts.length > 0) {
+            const scriptIds = linkedScripts.map(s => s.id);
+            await supabase.from('radio_scripts').update({ is_read: true }).in('id', scriptIds);
+          }
         }
+
+        // Clear queue_played_items older than 6 hours so articles can recycle
+        const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+        await supabase
+          .from('queue_played_items')
+          .delete()
+          .eq('channel_id', channelId)
+          .lt('created_at', sixHoursAgo);
+
+        // Auto-revert to entertainment after bulletin finishes
+        setTimeout(() => {
+          this.writeEntertainmentSegment(channelId).catch(err =>
+            console.error(`[radioEngine] Post-bulletin entertainment failed for ${channelId}:`, err.message)
+          );
+        }, durationSeconds * 1000);
+
       } else {
-        console.warn(`[${new Date().toISOString()}] [radioEngine] TTS generation failed for ${channelId} — writing fallback state`);
-        // Write a fallback "waiting for TTS" state so the frontend isn't stuck on null
-        this.updateCurrentSegment(channelId, {
-          segment_type: SEGMENT_TYPES.SILENCE,
-          segment_id: `silence-${Date.now()}`,
-          audio_url: null,
-          audio_type: null,
-          title: `${stationName} - Preparing broadcast...`,
-          duration_seconds: 30,
-          language,
-          voice_id: voice.voice_id,
-          description: `Broadcast is initializing. ${events.length > 0 ? `${events.length} stories queued.` : 'Waiting for content.'}`,
-        });
+        console.warn(`[${new Date().toISOString()}] [radioEngine] TTS generation failed for ${channelId} — reverting to entertainment to maintain cycle`);
+        this.writeEntertainmentSegment(channelId).catch(err =>
+          console.error(`[radioEngine] Entertainment fallback failed for ${channelId}:`, err.message)
+        );
       }
     } else {
-      console.warn(`[${new Date().toISOString()}] [radioEngine] No voice found for ${channelId}/${language} (stationId=${stationId}) — writing fallback state`);
-      // No voice configured — write fallback state
-      this.updateCurrentSegment(channelId, {
-        segment_type: SEGMENT_TYPES.SILENCE,
-        segment_id: `silence-${Date.now()}`,
-        audio_url: null,
-        audio_type: null,
-        title: `${stationName} - Broadcast initializing`,
-        duration_seconds: 30,
-        language,
-        voice_id: null,
-        description: `No TTS voice configured for ${language}. Broadcast will start once configured.`,
-      });
+      console.warn(`[${new Date().toISOString()}] [radioEngine] No voice found for ${channelId}/${language} (stationId=${stationId}) — reverting to entertainment`);
+      this.writeEntertainmentSegment(channelId).catch(err =>
+        console.error(`[radioEngine] Entertainment fallback (no-voice) failed for ${channelId}:`, err.message)
+      );
     }
   }
 
@@ -242,16 +285,22 @@ class RadioEngine {
     if (voice) {
       const ttsResult = await ttsGenerator.getOrGenerate(stationIdText, voice.voice_id, language);
       if (ttsResult) {
+        const durationSeconds = 5;
         this.updateCurrentSegment(channelId, {
           segment_type: SEGMENT_TYPES.JINGLE,
           segment_id: `station-id-${Date.now()}`,
           audio_url: ttsResult.audioUrl,
           audio_type: 'tts',
           title: `Station ID - ${stationName}`,
-          duration_seconds: 5,
+          duration_seconds: durationSeconds,
           language,
           voice_id: voice.voice_id,
         });
+        
+        // Auto-revert to ambient music after station ID finishes
+        setTimeout(() => {
+          this.writeAmbientSegment(channelId);
+        }, durationSeconds * 1000);
       }
     }
   }
@@ -272,17 +321,231 @@ class RadioEngine {
     if (voice) {
       const ttsResult = await ttsGenerator.getOrGenerate(timeText, voice.voice_id, language);
       if (ttsResult) {
+        const durationSeconds = 8;
         this.updateCurrentSegment(channelId, {
           segment_type: SEGMENT_TYPES.ANNOUNCEMENT,
           segment_id: `time-${Date.now()}`,
           audio_url: ttsResult.audioUrl,
           audio_type: 'tts',
           title: `Time: ${hour}:${String(minute).padStart(2, '0')}`,
-          duration_seconds: 8,
+          duration_seconds: durationSeconds,
           language,
           voice_id: voice.voice_id,
         });
+        
+        // Auto-revert to ambient music after time announcement finishes
+        setTimeout(() => {
+          this.writeAmbientSegment(channelId);
+        }, durationSeconds * 1000);
       }
+    }
+  }
+
+  /**
+   * Auto-seed station_channels and station_voices for DR Congo on first run.
+   * Returns true if seeding succeeded.
+   */
+  async autoSeedChannels() {
+    try {
+      // Find DR Congo station — try multiple strategies
+      let station = null;
+      const queries = [
+        supabase.from('stations').select('id, name').eq('country_code', 'CD').limit(1),
+        supabase.from('stations').select('id, name').ilike('name', '%congo%').limit(1),
+        supabase.from('stations').select('id, name').limit(1),
+      ];
+      for (const q of queries) {
+        const { data, error } = await q;
+        if (!error && data && data.length > 0) {
+          station = data[0];
+          break;
+        }
+      }
+      if (!station) {
+        console.error(`[radioEngine] Auto-seed: No station found in stations table`);
+        return false;
+      }
+      console.log(`[radioEngine] Auto-seed: Found station ${station.name} (${station.id})`);
+
+      // Seed voices per DRC station/region & bulletin requirements:
+      // Kinshasa (Lingala): uTB2ynnsQgtJDou6IulW
+      // Goma / Lubumbashi (Swahili): 2tSJpap7gXlgDV2bauu0
+      // Bulletins / Alerts (French): wBXNqKUATyqu0RtYt25i
+      const voices = [
+        { voice_id: 'uTB2ynnsQgtJDou6IulW', language: 'ln', gender: 'male', style: 'formal', is_primary: true },
+        { voice_id: '2tSJpap7gXlgDV2bauu0', language: 'sw', gender: 'female', style: 'formal', is_primary: true },
+        { voice_id: 'wBXNqKUATyqu0RtYt25i', language: 'fr', gender: 'male', style: 'bulletin', is_primary: true },
+      ];
+      for (const v of voices) {
+        await supabase.from('station_voices').upsert({
+          station_id: station.id,
+          voice_id: v.voice_id,
+          language: v.language,
+          gender: v.gender,
+          style: v.style,
+          is_primary: v.is_primary,
+        }, { onConflict: 'station_id,language,voice_id' });
+      }
+      console.log(`[radioEngine] Auto-seeded ${voices.length} voices`);
+
+      // Seed channels
+      const channelDefs = [
+        { channel_id: 'kinshasa-main', name: 'Kinshasa Main', lang: 'ln', freq: 88.1, emoji: '🇨🇩', desc: 'Primary Kinshasa broadcast channel in Lingala' },
+        { channel_id: 'goma-main', name: 'Goma Main', lang: 'sw', freq: 92.5, emoji: '🌋', desc: 'Primary Goma broadcast channel in Swahili' },
+        { channel_id: 'lubumbashi-main', name: 'Lubumbashi Main', lang: 'sw', freq: 95.3, emoji: '⛏️', desc: 'Primary Lubumbashi broadcast channel in Swahili' },
+      ];
+      const voiceMap = {};
+      for (const v of voices) voiceMap[v.language] = v.voice_id;
+
+      for (const ch of channelDefs) {
+        await supabase.from('station_channels').upsert({
+          station_id: station.id,
+          channel_id: ch.channel_id,
+          name: ch.name,
+          description: ch.desc,
+          frequency: ch.freq,
+          emoji: ch.emoji,
+          language: ch.lang,
+          primary_voice_id: voiceMap[ch.lang] || null,
+          is_active: true,
+          priority: 1,
+        }, { onConflict: 'channel_id' });
+      }
+      console.log(`[radioEngine] Auto-seeded ${channelDefs.length} channels`);
+
+      // Clean stale UUID-based radio_station_state rows
+      const { data: staleRows } = await supabase.from('radio_station_state').select('channel_id');
+      const validIds = new Set(channelDefs.map(c => c.channel_id));
+      const staleIds = (staleRows || []).filter(r => !validIds.has(r.channel_id)).map(r => r.channel_id);
+      if (staleIds.length > 0) {
+        for (let i = 0; i < staleIds.length; i += 50) {
+          const batch = staleIds.slice(i, i + 50);
+          await supabase.from('radio_station_state').delete().in('channel_id', batch);
+        }
+        console.log(`[radioEngine] Auto-seed: cleaned ${staleIds.length} stale state rows`);
+      }
+
+      return true;
+    } catch (err) {
+      console.error(`[radioEngine] Auto-seed failed:`, err.message);
+      return false;
+    }
+  }
+
+  /**
+   * Ensure voices exist for all channels. Seeds them if missing.
+   */
+  async ensureVoices(channels) {
+    const voiceDefs = [
+      { voice_id: 'uTB2ynnsQgtJDou6IulW', language: 'ln', gender: 'male', style: 'formal', is_primary: true },
+      { voice_id: '2tSJpap7gXlgDV2bauu0', language: 'sw', gender: 'female', style: 'formal', is_primary: true },
+      { voice_id: 'wBXNqKUATyqu0RtYt25i', language: 'fr', gender: 'male', style: 'bulletin', is_primary: true },
+    ];
+
+    // Check if any voice exists for any channel's station
+    const stationIds = [...new Set(channels.map(c => c.station_id))];
+    for (const stationId of stationIds) {
+      const { data: existing } = await supabase
+        .from('station_voices')
+        .select('id')
+        .eq('station_id', stationId)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        console.log(`[${new Date().toISOString()}] [radioEngine] Voices already exist for station ${stationId}`);
+        continue;
+      }
+
+      // Seed voices for this station
+      console.log(`[${new Date().toISOString()}] [radioEngine] Seeding voices for station ${stationId}`);
+      for (const v of voiceDefs) {
+        await supabase.from('station_voices').upsert({
+          station_id: stationId,
+          voice_id: v.voice_id,
+          language: v.language,
+          gender: v.gender,
+          style: v.style,
+          is_primary: v.is_primary,
+        }, { onConflict: 'station_id,language,voice_id' });
+      }
+    }
+
+    // Always reload voice cache after ensuring voices
+    await languageController.loadVoices();
+    console.log(`[${new Date().toISOString()}] [radioEngine] Voice cache reloaded (${languageController.getVoiceCacheSize?.() || 'unknown'} entries)`);
+  }
+
+  /**
+   * Write an Entertainment segment (music/podcast track from Music bucket) for a channel.
+   * Plays on the TRACK layer so controls (play/pause/seek) work.
+   * After the entertainment track ends, the next news bulletin is triggered automatically.
+   * All async operations are fully guarded — this method NEVER throws.
+   */
+  async writeEntertainmentSegment(channelId) {
+    try {
+      const bgUrl = await getCurrentEntertainmentMusicUrl();
+      const state = this.channels.get(channelId);
+      const channel = stationController.getChannel(channelId);
+      const stationName = channel?.name || channel?.station_name || 'Radio Lezo';
+      const stationId = state?.stationId || channel?.station_id;
+
+      const trackName = decodeURIComponent(bgUrl.substring(bgUrl.lastIndexOf('/') + 1));
+      console.log(`[${new Date().toISOString()}] [radioEngine] Writing Entertainment segment for ${channelId}: ${trackName}`);
+
+      // Entertainment plays for 3 minutes, then we trigger next bulletin
+      const entertainmentDurationSeconds = 180;
+
+      this.updateCurrentSegment(channelId, {
+        segment_type: SEGMENT_TYPES.TRACK,
+        segment_id: `entertainment-${Date.now()}`,
+        audio_url: bgUrl,
+        audio_type: 'stream',
+        title: `${stationName} — ${trackName.replace(/\.[^/.]+$/, '')}`,
+        duration_seconds: entertainmentDurationSeconds,
+        language: state?.language || 'fr',
+        voice_id: null,
+        transition_type: 'crossfade',
+        description: 'Entertainment & Music',
+      });
+
+      // After entertainment finishes, automatically trigger the next bulletin
+      setTimeout(() => {
+        if (!this.running) return;
+        console.log(`[${new Date().toISOString()}] [radioEngine] Entertainment ended for ${channelId}, triggering next bulletin`);
+        this.triggerBulletin({
+          channelId,
+          stationId,
+          label: `${stationName} — News Update`,
+          bulletinId: `auto-${Date.now()}`,
+        }).catch(err => {
+          console.error(`[radioEngine] Auto-bulletin failed for ${channelId}:`, err.message);
+          this.writeEntertainmentSegment(channelId).catch(e =>
+            console.error(`[radioEngine] Fallback entertainment also failed for ${channelId}:`, e.message)
+          );
+        });
+      }, entertainmentDurationSeconds * 1000);
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] [radioEngine] writeEntertainmentSegment failed for ${channelId}:`, err.message);
+    }
+  }
+
+  /**
+   * Legacy alias — all callers of writeAmbientSegment now route to writeEntertainmentSegment.
+   */
+  writeAmbientSegment(channelId) {
+    return this.writeEntertainmentSegment(channelId).catch(err =>
+      console.error(`[radioEngine] writeAmbientSegment failed for ${channelId}:`, err.message)
+    );
+  }
+
+  /**
+   * Rotate entertainment music across all channels.
+   */
+  rotateBackgroundMusic() {
+    if (!this.running) return;
+    console.log(`[${new Date().toISOString()}] [radioEngine] Rotating entertainment music for ${this.channels.size} channels`);
+    for (const channelId of this.channels.keys()) {
+      this.writeEntertainmentSegment(channelId);
     }
   }
 
@@ -303,7 +566,7 @@ class RadioEngine {
 
     console.log(`[${new Date().toISOString()}] [radioEngine] Writing state for ${channelId}: type=${segmentData.segment_type}, title=${segmentData.title?.substring(0, 60)}`);
     await playbackController.updateState(channelId, state);
-    await playbackController.logPlayback(channelId, state.currentSegment);
+    await playbackController.logPlayback(channelId, state.currentSegment, state.stationId);
     radioWsServer.broadcastState(channelId, this.formatStateForFrontend(state));
   }
 
@@ -369,6 +632,7 @@ class RadioEngine {
     eventScheduler.stopAll();
     radioWsServer.stopRadioWsServer();
     if (this.refreshInterval) clearInterval(this.refreshInterval);
+    if (this.backgroundRotationInterval) clearInterval(this.backgroundRotationInterval);
     console.log(`[${new Date().toISOString()}] [radioEngine] Engine stopped`);
   }
 }

@@ -201,7 +201,7 @@ export async function fetchNewsItems(region?: string, category?: string): Promis
 
 export async function fetchRadioScripts(region?: string, category?: string): Promise<any[]> {
   const rows = await _silentFetch(async () => {
-    let q = supabase.from('radio_scripts').select('*').eq('is_read', false).gte('created_at', retentionCutoff()).order('created_at', { ascending: true });
+    let q = supabase.from('radio_scripts').select('*').eq('is_read', false).gte('created_at', retentionCutoff()).order('created_at', { ascending: true }).limit(50);
     if (region) {
       const drcRegion = getRegionBySlug(region);
       if (drcRegion) {

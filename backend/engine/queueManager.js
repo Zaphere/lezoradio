@@ -90,7 +90,6 @@ export async function markPlayed(channelId, itemType, itemId, metadata = {}) {
       channel_id: channelId,
       item_type: itemType,
       item_id: itemId,
-      metadata,
     });
 
   if (error && error.code !== '23505') {

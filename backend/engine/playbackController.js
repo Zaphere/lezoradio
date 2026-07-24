@@ -97,11 +97,12 @@ export async function updateState(channelId, newState) {
 /**
  * Log a playback event to playback_history — includes source attribution.
  */
-export async function logPlayback(channelId, segment) {
+export async function logPlayback(channelId, segment, stationId) {
   const { error } = await supabase
     .from('playback_history')
     .insert({
       channel_id: channelId,
+      station_id: stationId || null,
       segment_type: segment.segment_type,
       segment_id: segment.segment_id || null,
       audio_url: segment.audio_url || null,

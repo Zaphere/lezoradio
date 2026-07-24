@@ -287,21 +287,21 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
         </div>
       </div>
 
-      <div className="max-w-lg md:max-w-3xl mx-auto px-4 py-6 md:grid md:grid-cols-[1fr_300px] md:gap-6 md:items-start lg:block lg:max-w-lg">
-        <div className="space-y-6">
-          <div className="text-center space-y-2 rf-fade-up">
+      <div className="max-w-lg mx-auto px-3 py-4 space-y-4 touch-pan-y" style={{ touchAction: 'pan-y' }}>
+        <div className="space-y-4">
+          <div className="text-center space-y-1.5 rf-fade-up">
             <div
-              className="inline-flex items-center justify-center w-14 h-14 md:w-16 md:h-16 rounded-full bg-surface border transition-shadow duration-500"
+              className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-surface border transition-shadow duration-500 shadow-sm"
               style={{
                 borderColor: `color-mix(in srgb, var(--c-primary) 45%, transparent)`,
-                boxShadow: isLive ? `0 0 24px -6px var(--c-glow)` : 'none',
+                boxShadow: isLive ? `0 0 20px -6px var(--c-glow)` : 'none',
               }}
             >
               {displayIcon}
             </div>
-            <h1 className="text-2xl md:text-3xl font-bold text-text-primary">{displayName}</h1>
+            <h1 className="text-xl font-bold text-text-primary tracking-tight">{displayName}</h1>
             {displaySubtitle && (
-              <p className="text-sm text-text-secondary">{displaySubtitle}</p>
+              <p className="text-xs text-text-secondary">{displaySubtitle}</p>
             )}
             <div className="flex items-center justify-center gap-2">
               <BroadcastModeIndicator mode={mode} bulletinHour={null} />
@@ -310,10 +310,10 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
 
           <div className="flex justify-center relative">
             <div
-              className="absolute inset-0 m-auto w-40 h-40 rounded-full blur-2xl opacity-40 pointer-events-none transition-opacity duration-700"
+              className="absolute inset-0 m-auto w-36 h-36 rounded-full blur-2xl opacity-40 pointer-events-none transition-opacity duration-700"
               style={{ background: theme.gradient, opacity: isLive ? 0.4 : 0.15 }}
             />
-            <div className="relative">
+            <div className="relative touch-none" style={{ touchAction: 'none' }}>
               <FrequencyDial
                 frequency={currentFreq}
                 isActive={isLive}
@@ -322,54 +322,15 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
             </div>
           </div>
 
-          <div className="flex justify-center">
-            <AudioVisualizer isPlaying={audio.isPlaying} size="large" />
+          <div className="flex justify-center py-1">
+            <AudioVisualizer isPlaying={audio.isPlaying} size="medium" />
           </div>
 
-          {isLive && nowPlaying && (
-            <>
-              {nowPlaying.description && (
-                <div className="card p-4 space-y-3 rf-fade-up">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
-                      Now Playing
-                    </h3>
-                    {nowPlaying.provider && (
-                      <span className="text-[10px] text-text-secondary">
-                        via {nowPlaying.provider}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="bg-surface rounded-xl p-3">
-                    <p className="text-sm font-semibold text-text-primary mb-1">
-                      {nowPlaying.title}
-                    </p>
-                    {nowPlaying.city && (
-                      <span
-                        className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium uppercase mb-2"
-                        style={{ backgroundColor: `color-mix(in srgb, var(--c-primary) 15%, transparent)`, color: 'var(--c-primary)' }}
-                      >
-                        {nowPlaying.city}{nowPlaying.province ? `, ${nowPlaying.province}` : ''}
-                      </span>
-                    )}
-                    <div className="max-h-48 overflow-y-auto">
-                      <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">
-                        {nowPlaying.description}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
           {!userStarted && (
-            <div className="flex flex-col items-center gap-3">
+            <div className="flex flex-col items-center gap-2 py-2">
               <button
                 onClick={() => setUserStarted(true)}
-                className={`${SOFT_BTN} inline-flex items-center gap-2 px-6 py-3 md:px-7 md:py-3.5 rounded-full text-white text-sm font-medium shadow-lg min-h-11`}
-                style={{ background: theme.gradient, boxShadow: `0 8px 24px -8px var(--c-glow)` }}
+                className={`${SOFT_BTN} inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-white text-xs font-bold shadow-lg bg-gradient-to-r from-red-600 via-red-500 to-red-600 hover:from-red-500 hover:to-red-600 shadow-red-500/40 active:scale-95 transition-all cursor-pointer`}
               >
                 <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z" />
@@ -377,7 +338,7 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
                 Start Listening
               </button>
               {nowPlayingError && (
-                <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-400">
+                <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-2.5 text-[11px] text-red-400">
                   Connection error: {nowPlayingError}
                 </div>
               )}
@@ -385,9 +346,9 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
           )}
 
           {userStarted && (
-            <>
+            <div className="space-y-3">
               <AudioPlayerBar
-                title={nowPlaying?.title ?? 'Connecting...'}
+                title={nowPlaying?.title ?? 'Radio Lezo — Background'}
                 subtitle={nowPlaying?.artist ?? undefined}
                 isPlaying={audio.isPlaying}
                 isPaused={audio.isPaused}
@@ -405,7 +366,7 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
               {isLive && skipToLive && nowPlaying?.nextTitle && (
                 <button
                   onClick={handleGoLive}
-                  className={`${SOFT_BTN} w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-medium min-h-11`}
+                  className={`${SOFT_BTN} w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-medium`}
                 >
                   <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                   Go Live
@@ -413,7 +374,7 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
               )}
 
               {!isLive && (
-                <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-3 text-xs text-blue-400">
+                <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-2.5 text-xs text-blue-400">
                   {isConnected
                     ? 'Waiting for the backend to start broadcasting...'
                     : 'Connecting to broadcast...'}
@@ -421,14 +382,14 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
               )}
 
               {isLive && isMusicMode && (
-                <div className="rounded-xl bg-indigo-500/10 border border-indigo-500/20 p-3 text-xs text-indigo-400 flex items-center gap-2">
+                <div className="rounded-xl bg-indigo-500/10 border border-indigo-500/20 p-2.5 text-xs text-indigo-400 flex items-center gap-2">
                   <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                   </svg>
                   <span>Playing music</span>
                 </div>
               )}
-            </>
+            </div>
           )}
 
           <NewsFeedPreview
@@ -445,37 +406,6 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
             </div>
           )}
         </div>
-
-        <aside className="hidden md:flex lg:hidden flex-col gap-4 sticky top-24 self-start rf-fade-up">
-          <div
-            className="rounded-2xl p-4 border border-border/50"
-            style={{ background: `linear-gradient(160deg, color-mix(in srgb, var(--c-primary) 12%, transparent), transparent)` }}
-          >
-            <h4 className="text-[10px] font-semibold text-text-secondary uppercase tracking-wider mb-3">
-              Tablet Controls
-            </h4>
-
-            <label className="block text-[10px] text-text-secondary uppercase tracking-wider mb-1.5">
-              Volume
-            </label>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={volume}
-              onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-              className="w-full accent-[var(--c-primary)] cursor-pointer"
-              aria-label="Volume"
-            />
-          </div>
-
-          {nextSegmentLabel && (
-            <div className="rounded-2xl p-3 border border-border/50 bg-surface/50 text-center text-xs text-text-secondary">
-              {nextSegmentLabel}
-            </div>
-          )}
-        </aside>
       </div>
     </div>
   );

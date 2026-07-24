@@ -4,6 +4,19 @@ import { fetchStations, fetchRadioScripts } from '../lib/supabase';
 import type { NewsCategory, StationRecord, RadioScript } from '../lib/types';
 import { getFlagEmoji } from '../lib/types';
 
+function _fallbackSpeak(text: string, onEnd?: (text: string | null) => void) {
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.85;
+    utterance.onend = () => onEnd?.(null);
+    utterance.onerror = () => onEnd?.(null);
+    window.speechSynthesis.speak(utterance);
+  } else {
+    onEnd?.(null);
+  }
+}
+
 type FilterTab = 'news' | 'transcripts' | 'alerts';
 
 const CATEGORIES: { label: string; value: NewsCategory | '' }[] = [
@@ -59,14 +72,41 @@ export default function Reader() {
       .join('\n\n');
   }, [scripts]);
 
-  const handleListen = (text: string) => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.85;
-      window.speechSynthesis.speak(utterance);
+  const [playingText, setPlayingText] = useState<string | null>(null);
+
+  const handleListen = (text: string, voiceIdOverride?: string) => {
+    // Toggle off if already playing same text
+    if (playingText === text) {
+      setPlayingText(null);
+      return;
+    }
+
+    const apiKey = (import.meta.env.VITE_ELEVENLABS_API_KEY as string) || '';
+    const voiceId = voiceIdOverride || (import.meta.env.VITE_ELEVENLABS_VOICE_ID as string) || 'wBXNqKUATyqu0RtYt25i';
+
+    setPlayingText(text);
+
+    if (apiKey) {
+      // Use browser-native fetch-based ElevenLabs client (not the Node SDK)
+      import('../services/tts/elevenlabsBrowser').then(({ ElevenLabsBrowser }) => {
+        const tts = new ElevenLabsBrowser(apiKey, voiceId);
+        tts.onEnd = () => setPlayingText(null);
+        tts.onError = (err) => {
+          console.warn('[Reader] ElevenLabs TTS error — falling back to browser TTS:', err);
+          setPlayingText(null);
+          _fallbackSpeak(text, setPlayingText);
+        };
+        tts.speak(text);
+      }).catch(() => {
+        setPlayingText(null);
+        _fallbackSpeak(text, setPlayingText);
+      });
+    } else {
+      _fallbackSpeak(text, setPlayingText);
     }
   };
+
+
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-8">

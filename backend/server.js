@@ -32,10 +32,22 @@ function normalizeNewsCategory(rawCategory, preferredCategory) {
   return 'regional';
 }
 
+function getCategoryQueryValues(category) {
+  const ALL_CATEGORIES = ['news', 'global', 'regional', 'local', 'traffic', 'alert', 'weather', 'agriculture', 'business', 'sports', 'geo', 'security', 'emergency', 'transport', 'event', 'government', 'health', 'tourism'];
+  if (!category) return ALL_CATEGORIES;
+  const norm = category.toLowerCase();
+  switch (norm) {
+    case 'regional': return ['regional', 'local', 'news'];
+    case 'global': return ['global', 'news'];
+    case 'traffic': return ['traffic'];
+    case 'alert': return ['alert', 'emergency'];
+    case 'local': return ['local', 'regional', 'news'];
+    default: return [norm];
+  }
+}
+
 async function getNewsContent(region, category) {
-  const categoriesToQuery = category
-    ? ['regional', 'local', 'news']
-    : ['news', 'global', 'regional', 'local', 'traffic', 'alert', 'weather', 'agriculture', 'business', 'sports', 'geo', 'security', 'emergency', 'transport', 'event', 'government', 'health', 'tourism'];
+  const categoriesToQuery = getCategoryQueryValues(category);
 
   let eventsQuery = serviceSupabase
     .from('events')
@@ -246,7 +258,7 @@ export function createApp() {
     }
   });
 
-  // Seed station_channels + clean stale radio_station_state data
+  // Seed station_channels + voices + clean stale radio_station_state data
   app.post('/api/debug/seed', async (_req, res) => {
     try {
       // Step 1: Find DR Congo station
@@ -259,21 +271,41 @@ export function createApp() {
       if (stErr) throw stErr;
       if (!station) return res.status(404).json({ error: 'DR Congo station not found in stations table' });
 
-      // Step 2: Check if station_channels already has DRC data
+      // Step 2: Seed voices into station_voices
+      const voices = [
+        { voice_id: '2tSJpap7gXlgDV2bauu0', language: 'ln', gender: 'female', style: 'formal', is_primary: true, desc: 'Female Lingala/Swahili — Kinshasa' },
+        { voice_id: 'uTB2ynnsQgtJDou6IulW', language: 'sw', gender: 'male', style: 'formal', is_primary: true, desc: 'Swahili Male — Goma' },
+        { voice_id: 'wBXNqKUATyqu0RtYt25i', language: 'sw', gender: 'male', style: 'formal', is_primary: false, desc: 'French Male — Lubumbashi' },
+      ];
+      let voicesInserted = 0;
+      for (const v of voices) {
+        const { error: insErr } = await serviceSupabase
+          .from('station_voices')
+          .upsert({
+            station_id: station.id,
+            voice_id: v.voice_id,
+            language: v.language,
+            gender: v.gender,
+            style: v.style,
+            is_primary: v.is_primary,
+          }, { onConflict: 'station_id,language,voice_id' });
+        if (insErr) {
+          console.error(`[seed] Failed to upsert voice ${v.voice_id}:`, insErr.message);
+        } else {
+          voicesInserted++;
+        }
+      }
+
+      // Step 3: Check if station_channels already has DRC data
       const { data: existing } = await serviceSupabase
         .from('station_channels')
         .select('channel_id')
         .in('channel_id', ['kinshasa-main', 'goma-main', 'lubumbashi-main']);
       const existingIds = new Set((existing || []).map(r => r.channel_id));
 
-      // Step 3: Find voices for DR Congo
-      const { data: voices } = await serviceSupabase
-        .from('station_voices')
-        .select('*')
-        .eq('station_id', station.id)
-        .eq('is_active', true);
+      // Build voice map: language -> voice_id
       const voiceMap = {};
-      for (const v of (voices || [])) {
+      for (const v of voices) {
         voiceMap[v.language] = v.voice_id;
       }
 
@@ -315,18 +347,17 @@ export function createApp() {
       const staleIds = (staleRows || []).filter(r => !validIds.has(r.channel_id)).map(r => r.channel_id);
       let deleted = 0;
       if (staleIds.length > 0) {
-        // Delete in batches (Supabase limit)
         for (let i = 0; i < staleIds.length; i += 50) {
-          const batch = staleIds.slice(i, i + 50);
+          const batch = staleRows.slice(i, i + 50);
           const { error: delErr } = await serviceSupabase
             .from('radio_station_state')
             .delete()
-            .in('channel_id', batch);
+            .in('channel_id', batch.map(r => r.channel_id));
           if (!delErr) deleted += batch.length;
         }
       }
 
-      res.json({ station: station.name, station_id: station.id, inserted, deleted_stale: deleted, voices: voiceMap });
+      res.json({ station: station.name, station_id: station.id, voices_inserted: voicesInserted, channels_inserted: inserted, stale_deleted: deleted, voice_map: voiceMap });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -533,13 +564,24 @@ export function startApiServer(port = process.env.PORT || 3001) {
 
   startBulletinSyncServer(server);
 
-  return server.listen(port, () => {
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`\n⚠️  Port ${port} is already in use — API server skipped (another instance is running).\n`);
+      // Don't crash — the existing server process will handle API requests.
+    } else {
+      console.error(`[server] Unexpected error:`, err.message);
+    }
+  });
+
+  server.listen(port, () => {
     console.log(`🌐 Radiolezo API server running on http://localhost:${port}`);
     console.log(`   Health: http://localhost:${port}/api/health`);
     console.log(`   RSS Proxy: http://localhost:${port}/api/rss/proxy?url=<rss-url>`);
     console.log(`   Trigger Ingestion: POST http://localhost:${port}/api/rss/ingest`);
     console.log(`   Bulletin Sync WS: ws://localhost:${port}/ws/bulletin\n`);
   });
+
+  return server;
 }
 
 // Allow running API-only via `npm run server`

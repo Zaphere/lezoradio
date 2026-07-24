@@ -42,9 +42,10 @@ CREATE TABLE IF NOT EXISTS bulletin_schedule (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Seed the French global bulletin schedule
+-- Seed the French global bulletin schedule (6am, 9am, 12pm, 3pm, 6pm, 9pm)
 INSERT INTO bulletin_schedule (name, type, language, hour, minute, duration_s)
 VALUES
+  ('French Global Bulletin — Early Morning', 'french_global', 'fr', 6,  0, 300),
   ('French Global Bulletin — Morning',  'french_global', 'fr', 9,  0, 300),
   ('French Global Bulletin — Midday',   'french_global', 'fr', 12, 0, 300),
   ('French Global Bulletin — Afternoon', 'french_global', 'fr', 15, 0, 300),

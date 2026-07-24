@@ -86,6 +86,8 @@ export function useAudioExecutor({
 
     mgr.setTrackEndCallback(() => {
       clearProgressTimer();
+      // Restore background music volume after TTS/bulletin ends
+      mgr.restoreBackground(TIMING.BACKGROUND_FADE_IN);
       setState(prev => ({ ...prev, isPlaying: false, isPaused: false, currentTime: 0 }));
       onTrackEndRef.current?.();
     });
@@ -115,32 +117,23 @@ export function useAudioExecutor({
       return;
     }
 
-    const handleTrackAudio = (url: string, transition: typeof transitionType) => {
+    const handleTrackAudio = (url: string, _transition: typeof transitionType) => {
       const duration = durationSeconds > 0 ? durationSeconds * 1000 : 30000;
 
-      if (transition === 'duck' && mgr.isBackgroundPlaying) {
+      // Duck background music smoothly (400ms) — voice plays OVER music
+      if (mgr.isBackgroundPlaying) {
         mgr.duckBackground(TIMING.INTRO_DUCK_DURATION);
-        setTimeout(() => {
-          mgr.playTrack(url);
-          setState({ isPlaying: true, isPaused: false, currentTime: 0, duration: duration / 1000 });
-          startProgressTimer();
-        }, TIMING.INTRO_DUCK_DURATION);
-      } else if (transition === 'crossfade' && mgr.isAnythingPlaying) {
-        mgr.fadeOutAll(TIMING.CROSSFADE_DURATION, () => {
-          mgr.playTrack(url);
-          setState({ isPlaying: true, isPaused: false, currentTime: 0, duration: duration / 1000 });
-          startProgressTimer();
-        });
-      } else {
-        mgr.stopAll();
-        mgr.playTrack(url);
-        setState({ isPlaying: true, isPaused: false, currentTime: 0, duration: duration / 1000 });
-        startProgressTimer();
       }
+
+      // Play presenter voice track immediately
+      mgr.playTrack(url);
+      setState({ isPlaying: true, isPaused: false, currentTime: 0, duration: duration / 1000 });
+      startProgressTimer();
     };
 
     const handleIntro = (url: string) => {
       mgr.playIntro(url, () => {
+        mgr.restoreBackground(TIMING.BACKGROUND_FADE_IN);
         setState(prev => ({ ...prev, isPlaying: false }));
       });
       setState({ isPlaying: true, isPaused: false, currentTime: 0, duration: durationSeconds || 0 });
@@ -153,8 +146,9 @@ export function useAudioExecutor({
     };
 
     if (!audioUrl) {
+      // No audio URL — ensure background keeps running
       if (segmentType !== 'ambient' && segmentType !== 'transition') {
-        setState({ isPlaying: false, isPaused: false, currentTime: 0, duration: 0 });
+        setState(prev => ({ ...prev, isPlaying: false }));
       }
       return;
     }
@@ -171,10 +165,12 @@ export function useAudioExecutor({
         handleIntro(audioUrl);
         break;
       case 'ambient':
+        // Ambient = background music layer, never interrupts anything
         handleBackground(audioUrl);
         break;
       case 'transition':
-        mgr.stopAll();
+        // Don't stop background during transitions — just stop foreground track
+        mgr.stopTrack(true);
         setState({ isPlaying: false, isPaused: false, currentTime: 0, duration: 0 });
         break;
       default:

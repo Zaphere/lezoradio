@@ -166,15 +166,5 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-process.on('SIGTERM', async () => {
-  console.log('\n🛑 Shutting down gracefully...');
-  
-  if (USE_PROVIDER_FRAMEWORK) {
-    await shutdownProviderFramework();
-  }
-  
-  expiryTask.stop();
-  process.exit(0);
-});
-
 console.log('✓ Service started. Press Ctrl+C to stop.\n');
+// Refreshed: Entertainment & Music bucket support

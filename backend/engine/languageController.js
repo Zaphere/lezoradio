@@ -11,8 +11,7 @@ const voiceCache = new Map();
 export async function loadVoices() {
   const { data, error } = await supabase
     .from('station_voices')
-    .select('*')
-    .eq('is_active', true);
+    .select('*');
 
   if (error) {
     console.error(`[${new Date().toISOString()}] [languageController] Failed to load voices:`, error.message);

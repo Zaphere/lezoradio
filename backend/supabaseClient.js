@@ -228,6 +228,7 @@ export async function insertRadioScript(newsItemId, scriptText, region, category
     return data;
   } catch (error) {
     if (error.code === '23505') return null;
+    console.error('Error inserting radio script:', error.message?.substring(0, 200));
     return null;
   }
 }
@@ -252,6 +253,7 @@ export async function insertContentSource(source) {
     return data;
   } catch (error) {
     if (error.code === '23505') return null;
+    console.error('Error inserting content source:', error.message?.substring(0, 200));
     return null;
   }
 }
@@ -462,6 +464,7 @@ export async function logProviderSync(syncData) {
       provider: syncData.provider,
       endpoint: syncData.endpoint || null,
       status: syncData.status,
+      sync_started_at: new Date().toISOString(),
       items_fetched: syncData.items_fetched || 0,
       items_inserted: syncData.items_inserted || 0,
       items_updated: syncData.items_updated || 0,

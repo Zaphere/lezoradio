@@ -1,7 +1,7 @@
 // @deprecated — archived in Phase 1 (2026-07-14). Config values now in database tables. See docs/DATABASE_ARCHITECTURE.md.
 export const TIMING = {
   INTRO_CUE_PERCENT: 0.85,
-  INTRO_DUCK_DURATION: 2000,
+  INTRO_DUCK_DURATION: 400,
   HOST_FADE_IN_DURATION: 800,
   HOST_DELAY_AFTER_DUCK: 400,
   BACKGROUND_FADE_IN: 1500,

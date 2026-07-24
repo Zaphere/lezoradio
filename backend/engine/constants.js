@@ -102,3 +102,65 @@ export const DEFAULT_STATE = {
   province: null,
   description: null,
 };
+
+import { supabase } from '../supabaseClient.js';
+
+// ── Entertainment / Music bucket scanning ──────────────────────────────────
+const MUSIC_BUCKET_PUBLIC_BASE = 'https://ohvdxujnzsgagdbzuhsy.supabase.co/storage/v1/object/public/Music/';
+const DEFAULT_ENTERTAINMENT_TRACK = 'https://ohvdxujnzsgagdbzuhsy.supabase.co/storage/v1/object/public/Music/DJ%20Sparks%20Letto.mp3';
+
+let cachedMusicList = [];
+let lastMusicScanTime = 0;
+
+/**
+ * Scan the Supabase 'Music' storage bucket for uploaded music files.
+ * Returns array of public URLs sorted by most recent first.
+ */
+export async function getLatestMusicFromBucket() {
+  const now = Date.now();
+  if (cachedMusicList.length > 0 && now - lastMusicScanTime < 2 * 60 * 1000) {
+    return cachedMusicList;
+  }
+
+  try {
+    const { data: files, error } = await supabase.storage
+      .from('Music')
+      .list('', {
+        sortBy: { column: 'created_at', order: 'desc' },
+      });
+
+    if (!error && files && files.length > 0) {
+      const validFiles = files.filter(f => f.name && !f.name.startsWith('.'));
+      if (validFiles.length > 0) {
+        cachedMusicList = validFiles.map(f => `${MUSIC_BUCKET_PUBLIC_BASE}${encodeURIComponent(f.name)}`);
+        lastMusicScanTime = now;
+        console.log(`[constants] Scanned 'Music' bucket: found ${cachedMusicList.length} tracks. Latest: ${validFiles[0].name}`);
+        return cachedMusicList;
+      }
+    }
+  } catch (err) {
+    console.warn('[constants] Could not list Music bucket:', err.message);
+  }
+
+  return [DEFAULT_ENTERTAINMENT_TRACK];
+}
+
+/**
+ * Get current entertainment track URL (prefers latest music in Music bucket).
+ */
+export async function getCurrentEntertainmentMusicUrl() {
+  const tracks = await getLatestMusicFromBucket();
+  if (!tracks || tracks.length === 0) return DEFAULT_ENTERTAINMENT_TRACK;
+
+  const hour = new Date().getHours();
+  const index = hour % tracks.length;
+  return tracks[index] || tracks[0];
+}
+
+/**
+ * Legacy compatibility export for getCurrentBackgroundMusicUrl
+ */
+export function getCurrentBackgroundMusicUrl() {
+  if (cachedMusicList.length > 0) return cachedMusicList[0];
+  return DEFAULT_ENTERTAINMENT_TRACK;
+}
