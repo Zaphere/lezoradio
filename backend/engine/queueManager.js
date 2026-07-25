@@ -60,7 +60,7 @@ export async function getUnplayedTrack(channelId) {
 
   let { data, error } = await supabase
     .from('music_tracks')
-    .select('*')
+    .select('id, title, artist, audio_url, duration_seconds, is_available, created_at')
     .order('created_at', { ascending: false })
     .limit(50);
 
@@ -189,7 +189,7 @@ async function getUnplayedEventsByProvider(channelId, provider, limit = 3) {
   const playedSet = await getPlayedEventIds(channelId);
   const { data, error } = await supabase
     .from('events')
-    .select('*')
+    .select('id, title, summary, provider, category, subcategory, city, province, priority, severity, created_at')
     .eq('status', 'active')
     .eq('provider', provider)
     .neq('category', 'geo')
@@ -213,7 +213,7 @@ async function getUnplayedEventsByCategory(channelId, categories, limit = 3) {
   const playedSet = await getPlayedEventIds(channelId);
   const { data, error } = await supabase
     .from('events')
-    .select('*')
+    .select('id, title, summary, provider, category, subcategory, city, province, priority, severity, created_at')
     .eq('status', 'active')
     .in('category', categories)
     .neq('category', 'geo')

@@ -32,6 +32,8 @@ class RadioEngine {
     this.running = false;
     this.refreshInterval = null;
     this.backgroundRotationInterval = null;
+    this.pendingTimers = new Map(); // channelId -> setTimeout handle
+    this._pendingTrack = null; // { channelId, track } — track announced via intro, pending playback
   }
 
   /**
@@ -208,10 +210,21 @@ class RadioEngine {
    * Write a background music segment (ambient type).
    * Plays on the background layer — ducked when foreground TTS plays.
    * After the track finishes, dispatches next content via priority chain.
+   * @param {object} [next] - Optional pre-selected track (used after a matching intro was played)
    */
-  async writeBackgroundSegment(channelId) {
+  async writeBackgroundSegment(channelId, next) {
     try {
-      const next = await queueManager.getNextBackgroundTrack(channelId);
+      if (!next) {
+        // Check for a pending track from a previously-announced intro
+        const pendingKey = `${channelId}`;
+        if (this._pendingTrack && this._pendingTrack.channelId === channelId) {
+          next = this._pendingTrack.track;
+          this._pendingTrack = null;
+        }
+      }
+      if (!next) {
+        next = await queueManager.getNextBackgroundTrack(channelId);
+      }
       if (!next) {
         console.warn(`[radioEngine] No background tracks available for ${channelId}`);
         return;
@@ -248,19 +261,29 @@ class RadioEngine {
 
   /**
    * Schedule the next content dispatch after a delay.
+   * Cancels any existing pending timer for the same channel.
+   * The resulting dispatch is NOT marked as an interrupt (natural end-of-segment).
    */
   scheduleNextContent(channelId, delayMs) {
-    setTimeout(() => {
+    const existing = this.pendingTimers.get(channelId);
+    if (existing) clearTimeout(existing);
+
+    const timer = setTimeout(() => {
+      this.pendingTimers.delete(channelId);
       if (!this.running) return;
-      this.dispatchNextContent(channelId).catch(err =>
+      this.dispatchNextContent(channelId, false).catch(err =>
         console.error(`[radioEngine] dispatchNextContent failed for ${channelId}:`, err.message)
       );
     }, delayMs);
+    this.pendingTimers.set(channelId, timer);
   }
 
   /**
    * Dispatch next content via priority chain.
    * Called after a segment ends (background track or foreground TTS).
+   *
+   * @param {string} channelId
+   * @param {boolean} [isInterrupt=false] - true when a cron-scheduled bulletin fired mid-track
    *
    * Priority:
    *   1. Traffic events (LezoTraffic)
@@ -268,7 +291,7 @@ class RadioEngine {
    *   3. Weather events
    *   4. Next background music track
    */
-  async dispatchNextContent(channelId) {
+  async dispatchNextContent(channelId, isInterrupt = false) {
     if (!this.running) return;
 
     const state = this.channels.get(channelId);
@@ -283,9 +306,40 @@ class RadioEngine {
 
     if (!nextContent || nextContent.type === 'music') {
       // No priority content — play next background music track
+
+      // Play outro for the track that just finished (if it was a background track)
+      const finishedSegment = state.currentSegment;
+      if (finishedSegment?.segment_type === SEGMENT_TYPES.AMBIENT && finishedSegment.title) {
+        const title = finishedSegment.title;
+        const cleanName = title.includes('—') ? title.split('—')[1].trim() : title.replace(`${stationName} — `, '');
+        const outroText = generateMusicOutro(language, cleanName, stationName);
+        const outroVoice = this.resolveVoice(stationId, channel, 'bulletin', language);
+        if (outroVoice.voice && outroText) {
+          const ttsResult = await ttsGenerator.getOrGenerate(outroText, outroVoice.voice.voice_id, language);
+          if (ttsResult) {
+            const outroDuration = Math.ceil(outroText.length / 15) + 1;
+            this.updateCurrentSegment(channelId, {
+              segment_type: SEGMENT_TYPES.ANNOUNCEMENT,
+              segment_id: `music-outro-${Date.now()}`,
+              audio_url: ttsResult.audioUrl,
+              audio_type: 'tts',
+              title: `${stationName} — Outro`,
+              duration_seconds: outroDuration,
+              language,
+              voice_id: outroVoice.voice.voice_id,
+              transition_type: 'crossfade',
+              description: `That was: ${cleanName}`,
+            });
+            this.scheduleNextContent(channelId, outroDuration * 1000);
+            return;
+          }
+        }
+      }
+
       if (nextContent?.musicTrack) {
         // Generate intro announcement for the track
-        const trackName = nextContent.musicTrack.title || 'Music';
+        const track = nextContent.musicTrack;
+        const trackName = track.title || 'Music';
         const introText = generateMusicIntro(language, trackName, stationName);
         const voice = this.resolveVoice(stationId, channel, 'bulletin', language);
 
@@ -305,13 +359,14 @@ class RadioEngine {
               transition_type: 'duck',
               description: `Up next: ${trackName}`,
             });
-            // After intro, start background track
+            // After intro, play the EXACT track that was announced
             this.scheduleNextContent(channelId, introDuration * 1000);
+            this._pendingTrack = { channelId, track };
             return;
           }
         }
 
-        // Fall through to write background directly if intro TTS fails
+        // Fall through if intro TTS fails
         this.writeBackgroundSegment(channelId);
       } else {
         this.writeBackgroundSegment(channelId);
@@ -336,8 +391,11 @@ class RadioEngine {
       return;
     }
 
-    // Generate apology transition (background track was playing)
-    const apologyText = generateBulletinApology(voice.language, stationName);
+    // Generate apology ONLY if this was a scheduled bulletin interrupting a playing track
+    let apologeticPrefix = '';
+    if (isInterrupt) {
+      apologeticPrefix = generateBulletinApology(voice.language, stationName) + ' ';
+    }
 
     // Generate content intro
     let contentIntro;
@@ -358,7 +416,7 @@ class RadioEngine {
     // Generate event scripts
     const eventScripts = events.map(e => generateEventScript(e, voice.language));
     const contentText = `${contentIntro} ${eventScripts.join('. ')}`;
-    const fullText = `${apologyText} ${contentText}`;
+    const fullText = `${apologeticPrefix}${contentText}`;
 
     console.log(`[${new Date().toISOString()}] [radioEngine] Generating ${contentType} TTS for ${channelId} (${fullText.length} chars)`);
 
@@ -410,12 +468,20 @@ class RadioEngine {
   }
 
   /**
-   * Trigger a bulletin (called by scheduler). Delegates to dispatchNextContent.
+   * Trigger a bulletin (called by scheduler). Delegates to dispatchNextContent as an interrupt.
+   * Cancels any pending natural-end timer so both don't fire for the same channel.
    */
   async triggerBulletin(data) {
     const { channelId } = data;
     console.log(`[${new Date().toISOString()}] [radioEngine] Bulletin triggered for ${channelId}: ${data.label}`);
-    await this.dispatchNextContent(channelId);
+
+    const existing = this.pendingTimers.get(channelId);
+    if (existing) {
+      clearTimeout(existing);
+      this.pendingTimers.delete(channelId);
+    }
+
+    await this.dispatchNextContent(channelId, true);
   }
 
   /**
