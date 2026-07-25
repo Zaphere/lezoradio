@@ -101,9 +101,11 @@ export class AudioManager {
     };
 
     const layer = this.layers.intro;
-    const audio = new Audio(url);
+    const audio = new Audio();
+    audio.crossOrigin = 'anonymous';
     audio.preload = 'auto';
     audio.volume = 0;
+    audio.src = url;
     layer.element = audio;
     layer.state = 'loading';
 
@@ -184,10 +186,12 @@ export class AudioManager {
     }
 
     const loop = options?.loop ?? false;
-    const audio = new Audio(url);
+    const audio = new Audio();
+    audio.crossOrigin = 'anonymous';
     audio.loop = loop;
     audio.preload = 'auto';
     audio.volume = 0;
+    audio.src = url;
 
     const startPlayback = () => {
       if (!loop && Number.isFinite(audio.duration) && audio.duration > 0) {
@@ -268,6 +272,7 @@ export class AudioManager {
 
     const layer = this.layers.track;
     const audio = new Audio();
+    audio.crossOrigin = 'anonymous';
     audio.preload = 'auto';
     audio.src = url;
 
