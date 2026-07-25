@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { StationRecord, ContentSource } from './types';
+import type { StationRecord, ContentSource, NewsCategory } from './types';
 import { getRegionBySlug } from './drcRegions';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -45,6 +45,59 @@ const _silentFetch = async <T>(fn: () => any, label?: string): Promise<T[]> => {
   }
 };
 
+function getCategoryQueryValues(category?: string): string[] {
+  const NEWS_CATEGORIES = ['news', 'global', 'regional', 'local', 'traffic', 'alert', 'weather', 'agriculture', 'business', 'sports', 'geo', 'security', 'emergency', 'transport', 'event', 'government', 'health', 'tourism'];
+
+  if (!category) return NEWS_CATEGORIES;
+
+  const normalized = category.toLowerCase();
+  switch (normalized) {
+    case 'regional':
+      return ['regional', 'local', 'news'];
+    case 'global':
+      return ['global', 'news'];
+    case 'traffic':
+      return ['traffic'];
+    case 'alert':
+      return ['alert', 'emergency'];
+    case 'local':
+      return ['local', 'regional', 'news'];
+    default:
+      return NEWS_CATEGORIES;
+  }
+}
+
+function normalizeNewsCategory(rawCategory: string | undefined, preferredCategory?: string): NewsCategory {
+  const normalized = (rawCategory || '').toLowerCase();
+  if (!normalized) return (preferredCategory as NewsCategory) || 'regional';
+
+  if (preferredCategory) {
+    switch (preferredCategory.toLowerCase()) {
+      case 'regional':
+        if (['regional', 'local', 'news'].includes(normalized)) return 'regional';
+        break;
+      case 'global':
+        if (['global', 'news'].includes(normalized)) return 'global';
+        break;
+      case 'traffic':
+        if (normalized === 'traffic') return 'traffic';
+        break;
+      case 'alert':
+        if (['alert', 'emergency'].includes(normalized)) return 'alert';
+        break;
+      case 'local':
+        if (['local', 'regional', 'news'].includes(normalized)) return 'local';
+        break;
+    }
+  }
+
+  if (['local', 'regional', 'global', 'traffic', 'alert'].includes(normalized)) {
+    return normalized as NewsCategory;
+  }
+  if (normalized === 'emergency') return 'alert';
+  return 'regional';
+}
+
 export async function fetchNewsItems(region?: string, category?: string): Promise<any[]> {
   const params = new URLSearchParams();
   if (region) params.set('region', region);
@@ -61,12 +114,80 @@ export async function fetchNewsItems(region?: string, category?: string): Promis
         return data;
       }
     }
-    console.warn(`[fetchNewsItems] Proxy returned HTTP ${response.status}`);
+    console.warn(`[fetchNewsItems] Proxy returned HTTP ${response.status}, falling back to direct queries`);
   } catch (err) {
-    console.warn('Content proxy unavailable:', err);
+    console.warn('Content proxy unavailable, falling back to direct Supabase client:', err);
   }
 
-  return [];
+  const categoriesToQuery = getCategoryQueryValues(category);
+
+  const events = await _silentFetch(async () => {
+    let q = supabase.from('events').select('id, provider, title, summary, description, metadata, province, country, category, priority, city, occurred_at, created_at, status').gte('created_at', retentionCutoff()).order('created_at', { ascending: false }).limit(50);
+    if (region) q = q.eq('province', region);
+    q = q.in('category', categoriesToQuery);
+    return q;
+  }, 'events');
+
+  const mapped = events.map((event: any) => ({
+    id: event.id,
+    feed_id: event.provider,
+    provider: event.provider,
+    title: event.title,
+    description: event.summary || '',
+    content: event.description || '',
+    url: event.metadata?.url || '',
+    region: event.province || event.country || 'global',
+    category: normalizeNewsCategory(event.category, category),
+    priority: event.priority,
+    city: event.city || event.metadata?.city,
+    province: event.province,
+    published_at: event.occurred_at || event.created_at,
+    ingested_at: event.created_at,
+    is_processed: event.status !== 'active',
+  }));
+
+  const newsItems = await _silentFetch(async () => {
+    let q = supabase.from('news_items').select('id, feed_id, title, description, content, url, region, category, published_at, ingested_at, is_processed').gte('ingested_at', retentionCutoff()).order('ingested_at', { ascending: false }).limit(50);
+    if (region) {
+      const drcRegion = getRegionBySlug(region);
+      if (drcRegion) {
+        q = q.in('region', [region, 'congo']);
+      } else {
+        q = q.eq('region', region);
+      }
+    }
+    q = q.in('category', categoriesToQuery);
+    return q;
+  }, 'news_items');
+
+  const mappedNews = newsItems.map((item: any) => ({
+    id: item.id,
+    feed_id: item.feed_id,
+    title: item.title,
+    description: item.description || '',
+    content: item.content || '',
+    url: item.url || '',
+    region: item.region || 'global',
+    category: normalizeNewsCategory(item.category, category),
+    published_at: item.published_at || item.ingested_at,
+    ingested_at: item.ingested_at,
+    is_processed: item.is_processed || false,
+  }));
+
+  const seen = new Set<string>();
+  const merged = [...mappedNews];
+  for (const item of merged) seen.add(item.title?.substring(0, 100) || item.id);
+  for (const item of mapped) {
+    const key = item.title?.substring(0, 100) || item.id;
+    if (!seen.has(key)) {
+      merged.push(item);
+      seen.add(key);
+    }
+  }
+
+  return merged.sort(
+    (a, b) => new Date(b.ingested_at).getTime() - new Date(a.ingested_at).getTime(),
+  );
 }
 
 export async function fetchRadioScripts(region?: string, category?: string): Promise<any[]> {

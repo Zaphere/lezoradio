@@ -49,74 +49,76 @@ function getCategoryQueryValues(category) {
 async function getNewsContent(region, category) {
   const categoriesToQuery = getCategoryQueryValues(category);
 
-  let eventsQuery = serviceSupabase
-    .from('events')
-    .select('id, provider, title, summary, description, metadata, province, country, category, priority, city, occurred_at, created_at, status')
-    .gte('created_at', retentionCutoff())
-    .in('category', categoriesToQuery)
-    .order('created_at', { ascending: false })
-    .limit(50);
-
-  if (region) {
-    eventsQuery = eventsQuery.eq('province', region);
-  }
-
-  const { data: events, error: eventsError } = await eventsQuery;
-
-  if (eventsError) throw eventsError;
-
-  const mapped = (events || []).map((event) => ({
-    id: event.id,
-    feed_id: event.provider,
-    provider: event.provider,
-    title: event.title,
-    description: event.summary || '',
-    content: event.description || '',
-    url: event.metadata?.url || '',
-    region: event.province || event.country || 'global',
-    category: normalizeNewsCategory(event.category, category),
-    priority: event.priority,
-    city: event.city || event.metadata?.city,
-    province: event.province,
-    published_at: event.occurred_at || event.created_at,
-    ingested_at: event.created_at,
-    is_processed: event.status !== 'active',
-  }));
-
-  let newsQuery = serviceSupabase
-    .from('news_items')
-    .select('id, feed_id, title, description, content, url, region, category, published_at, ingested_at, is_processed')
-    .gte('ingested_at', retentionCutoff())
-    .in('category', categoriesToQuery)
-    .order('ingested_at', { ascending: false })
-    .limit(50);
-
-  if (region) {
-    const isDrcRegion = ['kinshasa', 'goma', 'lubumbashi'].includes(region);
-    if (isDrcRegion) {
-      newsQuery = newsQuery.in('region', [region, 'congo']);
-    } else {
-      newsQuery = newsQuery.eq('region', region);
+  const eventsPromise = (async () => {
+    let q = serviceSupabase
+      .from('events')
+      .select('id, provider, title, summary, description, metadata, province, country, category, priority, city, occurred_at, created_at, status')
+      .gte('created_at', retentionCutoff())
+      .in('category', categoriesToQuery)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (region) q = q.eq('province', region);
+    const { data, error } = await q;
+    if (error) {
+      console.warn('[getNewsContent] events query failed:', error.message);
+      return [];
     }
-  }
+    return (data || []).map((event) => ({
+      id: event.id,
+      feed_id: event.provider,
+      provider: event.provider,
+      title: event.title,
+      description: event.summary || '',
+      content: event.description || '',
+      url: event.metadata?.url || '',
+      region: event.province || event.country || 'global',
+      category: normalizeNewsCategory(event.category, category),
+      priority: event.priority,
+      city: event.city || event.metadata?.city,
+      province: event.province,
+      published_at: event.occurred_at || event.created_at,
+      ingested_at: event.created_at,
+      is_processed: event.status !== 'active',
+    }));
+  })();
 
-  const { data: newsItems, error: newsItemsError } = await newsQuery;
+  const newsPromise = (async () => {
+    let q = serviceSupabase
+      .from('news_items')
+      .select('id, feed_id, title, description, content, url, region, category, published_at, ingested_at, is_processed')
+      .gte('ingested_at', retentionCutoff())
+      .in('category', categoriesToQuery)
+      .order('ingested_at', { ascending: false })
+      .limit(50);
+    if (region) {
+      const isDrcRegion = ['kinshasa', 'goma', 'lubumbashi'].includes(region);
+      if (isDrcRegion) {
+        q = q.in('region', [region, 'congo']);
+      } else {
+        q = q.eq('region', region);
+      }
+    }
+    const { data, error } = await q;
+    if (error) {
+      console.warn('[getNewsContent] news_items query failed:', error.message);
+      return [];
+    }
+    return (data || []).map((item) => ({
+      id: item.id,
+      feed_id: item.feed_id,
+      title: item.title,
+      description: item.description || '',
+      content: item.content || '',
+      url: item.url || '',
+      region: item.region || 'global',
+      category: normalizeNewsCategory(item.category, category),
+      published_at: item.published_at || item.ingested_at,
+      ingested_at: item.ingested_at,
+      is_processed: item.is_processed || false,
+    }));
+  })();
 
-  if (newsItemsError) throw newsItemsError;
-
-  const mappedNews = (newsItems || []).map((item) => ({
-    id: item.id,
-    feed_id: item.feed_id,
-    title: item.title,
-    description: item.description || '',
-    content: item.content || '',
-    url: item.url || '',
-    region: item.region || 'global',
-    category: normalizeNewsCategory(item.category, category),
-    published_at: item.published_at || item.ingested_at,
-    ingested_at: item.ingested_at,
-    is_processed: item.is_processed || false,
-  }));
+  const [mapped, mappedNews] = await Promise.all([eventsPromise, newsPromise]);
 
   const seen = new Set();
   const merged = [...mappedNews];
