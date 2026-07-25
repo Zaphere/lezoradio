@@ -60,7 +60,7 @@ export async function getUnplayedTrack(channelId) {
 
   let { data, error } = await supabase
     .from('music_tracks')
-    .select('id, title, artist, audio_url, duration_seconds, is_available, created_at')
+    .select('id, title, artist, audio_url, duration_ms, is_available, created_at')
     .order('created_at', { ascending: false })
     .limit(50);
 
@@ -81,7 +81,9 @@ export async function getUnplayedTrack(channelId) {
   if (pool.length === 0) return null;
 
   // Random selection from pool
-  return pool[Math.floor(Math.random() * pool.length)];
+  const track = pool[Math.floor(Math.random() * pool.length)];
+  track.duration_seconds = Math.round((track.duration_ms || 180000) / 1000);
+  return track;
 }
 
 /**
@@ -189,7 +191,7 @@ async function getUnplayedEventsByProvider(channelId, provider, limit = 3) {
   const playedSet = await getPlayedEventIds(channelId);
   const { data, error } = await supabase
     .from('events')
-    .select('id, title, summary, provider, category, subcategory, city, province, priority, severity, created_at')
+    .select('id, title, summary, provider, category, subcategory, city, province, country, priority, occurred_at, created_at')
     .eq('status', 'active')
     .eq('provider', provider)
     .neq('category', 'geo')
@@ -213,7 +215,7 @@ async function getUnplayedEventsByCategory(channelId, categories, limit = 3) {
   const playedSet = await getPlayedEventIds(channelId);
   const { data, error } = await supabase
     .from('events')
-    .select('id, title, summary, provider, category, subcategory, city, province, priority, severity, created_at')
+    .select('id, title, summary, provider, category, subcategory, city, province, country, priority, occurred_at, created_at')
     .eq('status', 'active')
     .in('category', categories)
     .neq('category', 'geo')

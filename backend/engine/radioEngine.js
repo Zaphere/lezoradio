@@ -117,10 +117,12 @@ class RadioEngine {
       radioWsServer.startRadioWsServer(httpServer, '/ws/radio');
     }
 
-    // Write initial background music for each channel
-    for (const ch of channels) {
-      this.writeBackgroundSegment(ch.channel_id);
-    }
+    // Write initial background music for each channel in parallel
+    await Promise.all(channels.map(ch =>
+      this.writeBackgroundSegment(ch.channel_id).catch(err =>
+        console.error(`[radioEngine] Initial background failed for ${ch.channel_id}:`, err.message)
+      )
+    ));
 
     // Dispatch first content via priority chain for each channel
     for (const ch of channels) {
