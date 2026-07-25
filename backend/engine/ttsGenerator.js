@@ -87,7 +87,8 @@ export async function generateTTS(text, voiceId, language) {
 
     // Get public URL
     const { data: urlData } = supabase.storage.from(CACHE_BUCKET).getPublicUrl(filename);
-    const audioUrl = urlData?.publicUrl;
+    const publicUrl = urlData?.publicUrl;
+    const audioUrl = publicUrl ? `/api/content/storage?bucket=tts-audio&file=${filename}` : null;
 
     if (!audioUrl) {
       console.error(`[${new Date().toISOString()}] [ttsGenerator] Failed to get public URL`);

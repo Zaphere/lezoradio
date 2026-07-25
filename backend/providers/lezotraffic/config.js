@@ -17,16 +17,16 @@ const DEFAULT_CONFIG = {
   },
 
   schedules: {
-    alerts: process.env.LEZOTRAFFIC_SCHEDULE_ALERTS || '*/30 * * * *',
-    incidents: process.env.LEZOTRAFFIC_SCHEDULE_INCIDENTS || '*/1 * * * *',
-    traffic_jams: process.env.LEZOTRAFFIC_SCHEDULE_TRAFFIC || '*/1 * * * *',
-    accidents: process.env.LEZOTRAFFIC_SCHEDULE_ACCIDENTS || '*/1 * * * *',
-    roadworks: process.env.LEZOTRAFFIC_SCHEDULE_ROADWORKS || '*/5 * * * *',
-    routes: process.env.LEZOTRAFFIC_SCHEDULE_ROUTES || '*/30 * * * *',
-    transports: process.env.LEZOTRAFFIC_SCHEDULE_TRANSPORTS || '*/10 * * * *',
-    cities: process.env.LEZOTRAFFIC_SCHEDULE_CITIES || '0 */24 * * *',
-    provinces: process.env.LEZOTRAFFIC_SCHEDULE_PROVINCES || '0 */24 * * *',
-    destinations: process.env.LEZOTRAFFIC_SCHEDULE_DESTINATIONS || '0 */24 * * *',
+    alerts: process.env.LEZOTRAFFIC_SCHEDULE_ALERTS || '*/15 * * * *',
+    incidents: process.env.LEZOTRAFFIC_SCHEDULE_INCIDENTS || '*/5 * * * *',
+    traffic_jams: process.env.LEZOTRAFFIC_SCHEDULE_TRAFFIC || '*/5 * * * *',
+    accidents: process.env.LEZOTRAFFIC_SCHEDULE_ACCIDENTS || '*/5 * * * *',
+    roadworks: process.env.LEZOTRAFFIC_SCHEDULE_ROADWORKS || '0 */2 * * *',
+    routes: process.env.LEZOTRAFFIC_SCHEDULE_ROUTES || '0 */2 * * *',
+    transports: process.env.LEZOTRAFFIC_SCHEDULE_TRANSPORTS || '*/15 * * * *',
+    cities: process.env.LEZOTRAFFIC_SCHEDULE_CITIES || '0 */6 * * *',
+    provinces: process.env.LEZOTRAFFIC_SCHEDULE_PROVINCES || '0 */6 * * *',
+    destinations: process.env.LEZOTRAFFIC_SCHEDULE_DESTINATIONS || '0 */6 * * *',
   },
 
   filters: {

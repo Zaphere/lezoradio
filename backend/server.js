@@ -192,6 +192,26 @@ export function createApp() {
     }
   });
 
+  // Storage proxy — serves Supabase Storage files through the same origin to avoid CORS
+  app.get('/api/content/storage', async (req, res) => {
+    try {
+      const file = typeof req.query.file === 'string' ? req.query.file : '';
+      const bucket = typeof req.query.bucket === 'string' ? req.query.bucket : 'tts-audio';
+      if (!file) return res.status(400).json({ error: 'Missing file parameter' });
+
+      const { data, error } = await serviceSupabase.storage.from(bucket).download(file);
+      if (error) throw error;
+      if (!data) return res.status(404).json({ error: 'File not found' });
+
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.send(Buffer.from(data));
+    } catch (err) {
+      console.error('Failed to proxy storage file:', err);
+      res.status(500).json({ error: err.message || 'Failed to fetch file' });
+    }
+  });
+
   app.get('/api/content/stations', async (_req, res) => {
     try {
       const { data, error } = await serviceSupabase

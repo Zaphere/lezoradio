@@ -19,10 +19,10 @@ function toIsoDate(value) {
 
 export async function fetchRSSFeed(feedUrl) {
   try {
-    console.log(`Fetching RSS feed: ${feedUrl}`);
-    const feed = await parser.parseURL(feedUrl);
-    console.log(`Found ${feed.items.length} items in feed`);
-    return feed.items.map(item => ({
+     console.log(`Fetching RSS feed: ${feedUrl}`);
+     const feed = await parser.parseURL(feedUrl);
+     console.log(`Found ${feed.items.length} items in feed`);
+     return feed.items.slice(0, 10).map(item => ({
       title: item.title || '',
       description: item.description || item.contentSnippet || '',
       content: item.content || item['content:encoded'] || item.contentSnippet || '',

@@ -128,7 +128,7 @@ class LezoTrafficProvider extends BaseProvider {
 
         const queryParams = endpointConfig.params({
           ...this.config.filters,
-          limit: 100,
+          limit: 20,
         });
 
         const startTime = Date.now();

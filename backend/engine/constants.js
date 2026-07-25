@@ -113,8 +113,8 @@ export const DEFAULT_STATE = {
 import { supabase } from '../supabaseClient.js';
 
 // ── Entertainment / Music bucket scanning ──────────────────────────────────
-const MUSIC_BUCKET_PUBLIC_BASE = 'https://ohvdxujnzsgagdbzuhsy.supabase.co/storage/v1/object/public/Music/';
-const DEFAULT_ENTERTAINMENT_TRACK = 'https://ohvdxujnzsgagdbzuhsy.supabase.co/storage/v1/object/public/Music/DJ%20Sparks%20Letto.mp3';
+const MUSIC_BUCKET_PUBLIC_BASE = '/api/content/storage?bucket=Music&file=';
+const DEFAULT_ENTERTAINMENT_TRACK = '/api/content/storage?bucket=Music&file=DJ%20Sparks%20Letto.mp3';
 
 let cachedMusicList = [];
 let lastMusicScanTime = 0;
