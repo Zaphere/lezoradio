@@ -199,13 +199,17 @@ export function createApp() {
       const bucket = typeof req.query.bucket === 'string' ? req.query.bucket : 'tts-audio';
       if (!file) return res.status(400).json({ error: 'Missing file parameter' });
 
-      const { data, error } = await serviceSupabase.storage.from(bucket).download(file);
-      if (error) throw error;
-      if (!data) return res.status(404).json({ error: 'File not found' });
+      const { data: urlData } = serviceSupabase.storage.from(bucket).getPublicUrl(file);
+      const publicUrl = urlData?.publicUrl;
+      if (!publicUrl) return res.status(404).json({ error: 'File not found' });
 
+      const fetchRes = await fetch(publicUrl);
+      if (!fetchRes.ok) return res.status(fetchRes.status).json({ error: 'Upstream fetch failed' });
+
+      const arrayBuf = await fetchRes.arrayBuffer();
       res.setHeader('Content-Type', 'audio/mpeg');
       res.setHeader('Cache-Control', 'public, max-age=3600');
-      res.send(Buffer.from(data));
+      res.send(Buffer.from(arrayBuf));
     } catch (err) {
       console.error('Failed to proxy storage file:', err);
       res.status(500).json({ error: err.message || 'Failed to fetch file' });
