@@ -1,62 +1,73 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface Props {
   isPlaying: boolean;
+  analyser?: AnalyserNode | null;
   size?: 'small' | 'medium' | 'large';
 }
 
-export default function AudioVisualizer({ isPlaying, size = 'medium' }: Props) {
-  const [levels, setLevels] = useState<number[]>([15, 30, 60, 45, 80, 50, 35, 20]);
+const BAR_COUNT = 16;
+
+export default function AudioVisualizer({ isPlaying, analyser, size = 'medium' }: Props) {
+  const barsRef = useRef<(HTMLDivElement | null)[]>([]);
+  const rafRef = useRef<number>(0);
 
   useEffect(() => {
-    if (!isPlaying) {
-      setLevels([12, 12, 12, 12, 12, 12, 12, 12]);
+    if (!isPlaying || !analyser) {
+      barsRef.current.forEach((bar) => {
+        if (bar) bar.style.height = '8px';
+      });
       return;
     }
 
-    const interval = setInterval(() => {
-      setLevels([
-        Math.floor(Math.random() * 65 + 20),
-        Math.floor(Math.random() * 85 + 15),
-        Math.floor(Math.random() * 95 + 25),
-        Math.floor(Math.random() * 75 + 20),
-        Math.floor(Math.random() * 100 + 30),
-        Math.floor(Math.random() * 80 + 20),
-        Math.floor(Math.random() * 60 + 15),
-        Math.floor(Math.random() * 40 + 15),
-      ]);
-    }, 90);
+    const data = new Uint8Array(analyser.frequencyBinCount);
 
-    return () => clearInterval(interval);
-  }, [isPlaying]);
+    const tick = () => {
+      analyser.getByteFrequencyData(data);
+      const step = Math.floor(data.length / BAR_COUNT);
+
+      barsRef.current.forEach((bar, idx) => {
+        if (!bar) return;
+        const slice = data.slice(idx * step, (idx + 1) * step);
+        const avg = slice.reduce((sum, v) => sum + v, 0) / Math.max(slice.length, 1);
+        const pct = Math.max(12, Math.min(100, (avg / 255) * 100 + 8));
+        bar.style.height = `${pct}%`;
+      });
+
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [isPlaying, analyser]);
 
   const sizeClasses = {
     small: 'h-6 gap-0.5',
-    medium: 'h-10 gap-1',
-    large: 'h-14 gap-1.5'
+    medium: 'h-10 gap-0.5 px-4',
+    large: 'h-14 gap-1 px-6',
   };
 
   const barWidths = {
-    small: 'w-1',
-    medium: 'w-1.5',
-    large: 'w-2'
+    small: 'w-0.5',
+    medium: 'w-1',
+    large: 'w-1.5',
   };
 
   return (
-    <div className={`flex items-center justify-center ${sizeClasses[size]}`}>
-      {levels.map((lvl, idx) => (
+    <div className={`flex items-end justify-center w-full max-w-xs mx-auto ${sizeClasses[size]} ${isPlaying ? 'visualizer-glow' : ''}`}>
+      {Array.from({ length: BAR_COUNT }).map((_, idx) => (
         <div
           key={idx}
-          className={`${barWidths[size]} rounded-full transition-[height,opacity] duration-100 ease-out ${
+          ref={(el) => { barsRef.current[idx] = el; }}
+          className={`${barWidths[size]} rounded-full transition-[height] duration-75 ease-out ${
             isPlaying
-              ? 'bg-gradient-to-t from-primary/80 to-primary shadow-sm shadow-primary/30'
-              : 'bg-primary/20 h-2'
+              ? 'bg-gradient-to-t from-primary/80 via-primary to-primary shadow-sm shadow-primary/30'
+              : 'bg-primary/20'
           }`}
-          style={{
-            height: isPlaying ? `${lvl}%` : '8px',
-          }}
+          style={{ height: '8px' }}
         />
       ))}
     </div>
   );
 }
+

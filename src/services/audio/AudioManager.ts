@@ -18,6 +18,9 @@ export class AudioManager {
 
   private masterVolume = 1;
   private onTrackEnd: (() => void) | null = null;
+  private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private connectedElements = new WeakSet<HTMLAudioElement>();
 
   setTrackEndCallback(cb: (() => void) | null): void {
     this.onTrackEnd = cb;
@@ -406,6 +409,44 @@ export class AudioManager {
 
   getTrackElement(): HTMLAudioElement | null {
     return this.layers.track.element;
+  }
+
+  getBackgroundElement(): HTMLAudioElement | null {
+    return this.layers.background.element;
+  }
+
+  /** Connect an audio element to the shared analyser (for visualizer). */
+  connectAnalyser(audio: HTMLAudioElement): AnalyserNode | null {
+    if (this.connectedElements.has(audio)) return this.analyser;
+
+    try {
+      if (!this.audioContext) {
+        this.audioContext = new AudioContext();
+        this.analyser = this.audioContext.createAnalyser();
+        this.analyser.fftSize = 64;
+        this.analyser.smoothingTimeConstant = 0.75;
+        this.analyser.connect(this.audioContext.destination);
+      }
+
+      const source = this.audioContext.createMediaElementSource(audio);
+      source.connect(this.analyser!);
+      this.connectedElements.add(audio);
+      return this.analyser;
+    } catch {
+      return this.analyser;
+    }
+  }
+
+  getAnalyser(): AnalyserNode | null {
+    const track = this.layers.track.element;
+    const bg = this.layers.background.element;
+    const active = track && !track.paused ? track : bg && !bg.paused ? bg : track || bg;
+    if (active) return this.connectAnalyser(active);
+    return this.analyser;
+  }
+
+  resumeAudioContext(): void {
+    void this.audioContext?.resume();
   }
 
   dispose(): void {

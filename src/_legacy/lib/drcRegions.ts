@@ -52,7 +52,7 @@ export const DRC_COUNTRY = {
   countryCode: 'CD',
 };
 
-export const PRIME_TIMES = [9, 12, 15, 18, 21];
+export const PRIME_TIMES = [6, 9, 12, 15, 18, 21];
 
 export function isPrimeTime(date: Date = new Date()): boolean {
   const drcHour = (date.getUTCHours() + 2) % 24;

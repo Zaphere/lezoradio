@@ -215,3 +215,27 @@ body.light-mode .card {
 .animate-slide-in {
   animation: slideIn 0.3s ease-out;
 }
+
+@utility radio-screen {
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+  height: 100dvh;
+}
+
+@utility radio-scrollable-content {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+@keyframes glow-pulse {
+  0%, 100% { filter: drop-shadow(0 0 2px var(--color-primary)) opacity(0.8); }
+  50% { filter: drop-shadow(0 0 8px var(--color-primary)) opacity(1); }
+}
+
+.visualizer-glow {
+  animation: glow-pulse 2s infinite ease-in-out;
+}
+

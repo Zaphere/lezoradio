@@ -21,6 +21,8 @@ interface UseAudioExecutorResult extends AudioExecutorState {
   pause: () => void;
   resume: () => void;
   seek: (time: number) => void;
+  getAnalyser: () => AnalyserNode | null;
+  resumeAudioContext: () => void;
 }
 
 /**
@@ -206,11 +208,16 @@ export function useAudioExecutor({
     }
   }, []);
 
+  const getAnalyser = useCallback(() => managerRef.current?.getAnalyser() ?? null, []);
+  const resumeAudioContext = useCallback(() => managerRef.current?.resumeAudioContext(), []);
+
   return {
     ...state,
     setVolume,
     pause,
     resume,
     seek,
+    getAnalyser,
+    resumeAudioContext,
   };
 }

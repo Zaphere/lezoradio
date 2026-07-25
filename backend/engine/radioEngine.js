@@ -1,7 +1,7 @@
 // backend/engine/radioEngine.js
 // Top-level orchestrator — event-driven, coordinates all engine modules.
 
-import { ENGINE_VERSION, SEGMENT_TYPES, DEFAULT_STATE, getCurrentEntertainmentMusicUrl } from './constants.js';
+import { ENGINE_VERSION, SEGMENT_TYPES, DEFAULT_STATE, VOICE_IDS, getCurrentEntertainmentMusicUrl } from './constants.js';
 import * as stationController from './stationController.js';
 import * as languageController from './languageController.js';
 import * as contentNormalizer from './contentNormalizer.js';
@@ -167,23 +167,62 @@ class RadioEngine {
   /**
    * Trigger a bulletin for a channel — uses scriptGenerator, not hardcoded text.
    */
+  resolveBulletinVoice(stationId, channel, events, bulletinId) {
+    const channelLang = channel?.language || 'fr';
+    const hasAlerts = events.some(e => e.category === 'alert' || e.category === 'emergency');
+    const trafficOnly = events.length > 0 && events.every(
+      e => e.category === 'traffic' || e.provider === 'lezotraffic',
+    );
+    const isScheduledNews = bulletinId
+      && !String(bulletinId).startsWith('auto-')
+      && !String(bulletinId).startsWith('initial-');
+
+    if (hasAlerts) {
+      return {
+        language: 'fr',
+        voice: languageController.resolveVoice(stationId, 'fr', 'alert')
+          || languageController.resolveVoice(stationId, 'fr', 'bulletin')
+          || { voice_id: VOICE_IDS.FRENCH_ADAM, language: 'fr', style: 'alert' },
+      };
+    }
+
+    if (trafficOnly && channelLang === 'sw') {
+      return {
+        language: 'sw',
+        voice: languageController.resolveVoice(stationId, 'sw', 'formal')
+          || { voice_id: VOICE_IDS.SWAHILI_FEMALE, language: 'sw', style: 'formal' },
+      };
+    }
+
+    if (isScheduledNews) {
+      return {
+        language: 'fr',
+        voice: languageController.resolveVoice(stationId, 'fr', 'bulletin')
+          || { voice_id: VOICE_IDS.FRENCH_ADAM, language: 'fr', style: 'bulletin' },
+      };
+    }
+
+    let voice = languageController.resolveVoice(stationId, channelLang, 'formal');
+    if (!voice && channel?.primary_voice_id) {
+      voice = { voice_id: channel.primary_voice_id, language: channelLang, style: 'formal' };
+    }
+    return { language: channelLang, voice };
+  }
+
   async triggerBulletin(data) {
     const { channelId, stationId, label, bulletinId } = data;
     console.log(`[${new Date().toISOString()}] [radioEngine] Bulletin triggered for ${channelId}: ${label}`);
 
     const channel = stationController.getChannel(channelId);
-    const language = channel?.language || this.channels.get(channelId)?.language || 'fr';
     const stationName = channel?.station_name || 'Radio Lezo';
-    let voice = languageController.resolveVoice(stationId, language, 'bulletin');
-
-    // Fallback: use channel's primary_voice_id if cache lookup failed
-    if (!voice && channel?.primary_voice_id) {
-      voice = { voice_id: channel.primary_voice_id, language, style: 'formal' };
-      console.log(`[${new Date().toISOString()}] [radioEngine] Using channel primary_voice_id: ${channel.primary_voice_id} for ${channelId}/${language}`);
-    }
 
     // Limit to 3 events per bulletin to avoid exceeding ElevenLabs 5000 character limit
     const events = await queueManager.getUnplayedEvents(channelId, 3);
+    const { language, voice } = this.resolveBulletinVoice(stationId, channel, events, bulletinId);
+
+    if (voice) {
+      console.log(`[${new Date().toISOString()}] [radioEngine] Bulletin voice: ${voice.voice_id} (${language}) for ${channelId}`);
+    }
     console.log(`[${new Date().toISOString()}] [radioEngine] Found ${events.length} unplayed events for ${channelId}`);
 
     let bulletinText;
@@ -372,9 +411,10 @@ class RadioEngine {
       // Goma / Lubumbashi (Swahili): 2tSJpap7gXlgDV2bauu0
       // Bulletins / Alerts (French): wBXNqKUATyqu0RtYt25i
       const voices = [
-        { voice_id: 'uTB2ynnsQgtJDou6IulW', language: 'ln', gender: 'male', style: 'formal', is_primary: true },
-        { voice_id: '2tSJpap7gXlgDV2bauu0', language: 'sw', gender: 'female', style: 'formal', is_primary: true },
-        { voice_id: 'wBXNqKUATyqu0RtYt25i', language: 'fr', gender: 'male', style: 'bulletin', is_primary: true },
+        { voice_id: VOICE_IDS.KINSHASA_LINGALA, language: 'ln', gender: 'male', style: 'formal', is_primary: true },
+        { voice_id: VOICE_IDS.SWAHILI_FEMALE, language: 'sw', gender: 'female', style: 'formal', is_primary: true },
+        { voice_id: VOICE_IDS.FRENCH_ADAM, language: 'fr', gender: 'male', style: 'bulletin', is_primary: true },
+        { voice_id: VOICE_IDS.FRENCH_ADAM, language: 'fr', gender: 'male', style: 'alert', is_primary: true },
       ];
       for (const v of voices) {
         await supabase.from('station_voices').upsert({
@@ -437,9 +477,10 @@ class RadioEngine {
    */
   async ensureVoices(channels) {
     const voiceDefs = [
-      { voice_id: 'uTB2ynnsQgtJDou6IulW', language: 'ln', gender: 'male', style: 'formal', is_primary: true },
-      { voice_id: '2tSJpap7gXlgDV2bauu0', language: 'sw', gender: 'female', style: 'formal', is_primary: true },
-      { voice_id: 'wBXNqKUATyqu0RtYt25i', language: 'fr', gender: 'male', style: 'bulletin', is_primary: true },
+      { voice_id: VOICE_IDS.KINSHASA_LINGALA, language: 'ln', gender: 'male', style: 'formal', is_primary: true },
+      { voice_id: VOICE_IDS.SWAHILI_FEMALE, language: 'sw', gender: 'female', style: 'formal', is_primary: true },
+      { voice_id: VOICE_IDS.FRENCH_ADAM, language: 'fr', gender: 'male', style: 'bulletin', is_primary: true },
+      { voice_id: VOICE_IDS.FRENCH_ADAM, language: 'fr', gender: 'male', style: 'alert', is_primary: true },
     ];
 
     // Check if any voice exists for any channel's station

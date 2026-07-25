@@ -273,9 +273,10 @@ export function createApp() {
 
       // Step 2: Seed voices into station_voices
       const voices = [
-        { voice_id: '2tSJpap7gXlgDV2bauu0', language: 'ln', gender: 'female', style: 'formal', is_primary: true, desc: 'Female Lingala/Swahili — Kinshasa' },
-        { voice_id: 'uTB2ynnsQgtJDou6IulW', language: 'sw', gender: 'male', style: 'formal', is_primary: true, desc: 'Swahili Male — Goma' },
-        { voice_id: 'wBXNqKUATyqu0RtYt25i', language: 'sw', gender: 'male', style: 'formal', is_primary: false, desc: 'French Male — Lubumbashi' },
+        { voice_id: 'uTB2ynnsQgtJDou6IulW', language: 'ln', gender: 'male', style: 'formal', is_primary: true, desc: 'Lingala — Kinshasa' },
+        { voice_id: '2tSJpap7gXlgDV2bauu0', language: 'sw', gender: 'female', style: 'formal', is_primary: true, desc: 'Swahili Female — Goma / Lubumbashi' },
+        { voice_id: 'wBXNqKUATyqu0RtYt25i', language: 'fr', gender: 'male', style: 'bulletin', is_primary: true, desc: 'Adam French — News bulletins' },
+        { voice_id: 'wBXNqKUATyqu0RtYt25i', language: 'fr', gender: 'male', style: 'alert', is_primary: true, desc: 'Adam French — Alerts' },
       ];
       let voicesInserted = 0;
       for (const v of voices) {
