@@ -35,6 +35,7 @@ class RadioEngine {
     this.pendingTimers = new Map(); // channelId -> setTimeout handle
     this._pendingTrack = null; // { channelId, track } — track announced via intro, pending playback
     this._recentlyPlayed = new Map(); // channelId -> Map<eventId, timestamp> — in-memory dedup safety net
+    this._consecutiveContent = new Map(); // channelId -> count — forces music after 2 consecutive content segments
   }
 
   /**
@@ -382,9 +383,19 @@ class RadioEngine {
       ? new Set(this._recentlyPlayed.get(channelId).keys())
       : new Set();
 
-    const nextContent = await queueManager.getNextContent(channelId, language, 3, excludeIds);
+    // Force music after 2 consecutive content segments (prevents queue starvation)
+    const consecCount = this._consecutiveContent.get(channelId) || 0;
+    const forceMusic = consecCount >= 2;
+    if (forceMusic) {
+      console.log(`[radioEngine] ${channelId}: forcing music after ${consecCount} consecutive content segments`);
+    }
+
+    const nextContent = await queueManager.getNextContent(channelId, language, 3, excludeIds, forceMusic);
 
     if (!nextContent || nextContent.type === 'music') {
+      // Reset consecutive content counter
+      this._consecutiveContent.set(channelId, 0);
+
       // No priority content — play next background music track
 
       // Play outro for the track that just finished (if it was a background track)
@@ -526,6 +537,9 @@ class RadioEngine {
       province: topEvent.province || null,
       description: fullText.substring(0, 500),
     });
+
+    // Track consecutive content segments (reset to 0 when music plays)
+    this._consecutiveContent.set(channelId, (this._consecutiveContent.get(channelId) || 0) + 1);
 
     // Mark events as played
     for (const event of events) {
