@@ -48,6 +48,7 @@ export async function getUnplayedEvents(channelId, limit = 10) {
 
 /**
  * Get an unplayed music track for a channel.
+ * Tries music_tracks first, then entertainment_tracks as fallback.
  */
 export async function getUnplayedTrack(channelId) {
   const { data: playedIds } = await supabase
@@ -58,6 +59,7 @@ export async function getUnplayedTrack(channelId) {
 
   const playedSet = new Set((playedIds || []).map(r => r.item_id));
 
+  // Try music_tracks table first
   let { data, error } = await supabase
     .from('music_tracks')
     .select('id, title, artist, audio_url, duration_ms, created_at')
@@ -65,14 +67,35 @@ export async function getUnplayedTrack(channelId) {
     .limit(50);
 
   if (error) {
-    console.error(`[${new Date().toISOString()}] [queueManager] Failed to get tracks:`, error.message);
-    return null;
+    console.error(`[${new Date().toISOString()}] [queueManager] Failed to get tracks from music_tracks:`, error.message);
+    data = [];
   }
 
   // Filter out unavailable tracks if the column exists in returned data
   if (data && data.length > 0 && 'is_available' in data[0]) {
     data = data.filter(t => t.is_available !== false);
   }
+
+  // If no music_tracks, try entertainment_tracks table
+  if (!data || data.length === 0) {
+    console.log(`[queueManager] music_tracks empty, trying entertainment_tracks...`);
+    const { data: entData, error: entError } = await supabase
+      .from('entertainment_tracks')
+      .select('id, title, artist, audio_url, duration_ms, created_at')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (!entError && entData && entData.length > 0) {
+      // Filter out placeholder URLs
+      const realTracks = entData.filter(t => t.audio_url && !t.audio_url.includes('your-project.supabase.co'));
+      if (realTracks.length > 0) {
+        data = realTracks;
+      }
+    }
+  }
+
+  if (!data || data.length === 0) return null;
 
   // Prefer unplayed tracks
   const unplayed = (data || []).filter(t => !playedSet.has(t.id));
@@ -161,18 +184,20 @@ export async function getNextContent(channelId, language = 'fr', maxEvents = 3, 
   const lezoEvents = (await getUnplayedEventsByProvider(channelId, 'lezotraffic', maxEvents))
     .filter(e => !excludeIds.has(e.id));
   if (lezoEvents.length > 0) {
+    console.log(`[queueManager] ${channelId}: found ${lezoEvents.length} LezoTraffic events`);
     return {
       type: 'traffic',
       events: lezoEvents,
       musicTrack: null,
-      transitionText: null, // caller generates transition via scriptGenerator
+      transitionText: null,
     };
   }
 
-  // Step 4: Check recent news events
+  // Step 4: Check recent news events (events table, then news_items fallback)
   const newsEvents = (await getUnplayedEventsByCategory(channelId, ['news', 'regional', 'local', 'global'], maxEvents))
     .filter(e => !excludeIds.has(e.id));
   if (newsEvents.length > 0) {
+    console.log(`[queueManager] ${channelId}: found ${newsEvents.length} news events (provider=${newsEvents[0]?.provider})`);
     return {
       type: 'news',
       events: newsEvents,
@@ -185,6 +210,7 @@ export async function getNextContent(channelId, language = 'fr', maxEvents = 3, 
   const weatherEvents = (await getUnplayedEventsByCategory(channelId, ['weather'], maxEvents))
     .filter(e => !excludeIds.has(e.id));
   if (weatherEvents.length > 0) {
+    console.log(`[queueManager] ${channelId}: found ${weatherEvents.length} weather events`);
     return {
       type: 'weather',
       events: weatherEvents,
@@ -194,6 +220,7 @@ export async function getNextContent(channelId, language = 'fr', maxEvents = 3, 
   }
 
   // Step 6: Next music track from bucket (fallback)
+  console.log(`[queueManager] ${channelId}: no priority content, falling back to music`);
   const nextTrack = await getNextBackgroundTrack(channelId);
   return {
     type: 'music',
@@ -229,6 +256,7 @@ async function getUnplayedEventsByProvider(channelId, provider, limit = 3) {
 
 /**
  * Get unplayed events filtered by category array.
+ * Falls back to news_items table if events table is empty.
  */
 async function getUnplayedEventsByCategory(channelId, categories, limit = 3) {
   const playedSet = await getPlayedEventIds(channelId);
@@ -247,6 +275,51 @@ async function getUnplayedEventsByCategory(channelId, categories, limit = 3) {
   }
 
   const unplayed = (data || []).filter(e => !playedSet.has(e.id));
+  if (unplayed.length > 0) return unplayed.slice(0, limit);
+
+  // Fallback: query news_items table directly (RSS content lives here)
+  if (categories.includes('news')) {
+    return getUnplayedNewsItems(channelId, limit);
+  }
+  return [];
+}
+
+/**
+ * Get unplayed news from the news_items table (fallback when events table is empty).
+ * Normalizes news_items rows to match the events format the engine expects.
+ */
+async function getUnplayedNewsItems(channelId, limit = 3) {
+  const playedSet = await getPlayedEventIds(channelId);
+
+  const { data, error } = await supabase
+    .from('news_items')
+    .select('id, title, description, content, region, category, published_at, ingested_at')
+    .gte('ingested_at', new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())
+    .order('ingested_at', { ascending: false })
+    .limit(50);
+
+  if (error) {
+    console.error(`[queueManager] getUnplayedNewsItems error:`, error.message);
+    return [];
+  }
+
+  // Normalize to events format
+  const normalized = (data || []).map(item => ({
+    id: item.id,
+    title: item.title,
+    summary: item.description || item.content || '',
+    provider: 'rss',
+    category: 'news',
+    subcategory: item.category || 'general',
+    city: null,
+    province: item.region || null,
+    country: 'CD',
+    priority: 4,
+    occurred_at: item.published_at || item.ingested_at,
+    created_at: item.ingested_at,
+  }));
+
+  const unplayed = normalized.filter(e => !playedSet.has(e.id));
   return unplayed.slice(0, limit);
 }
 

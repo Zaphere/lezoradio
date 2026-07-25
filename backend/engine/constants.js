@@ -114,6 +114,7 @@ import { supabase } from '../supabaseClient.js';
 
 // ── Entertainment / Music bucket scanning ──────────────────────────────────
 const MUSIC_BUCKET_PUBLIC_BASE = '/api/content/storage?bucket=Music&file=';
+const INTROAUDIO_BUCKET_BASE = '/api/content/storage?bucket=introaudio&file=';
 const DEFAULT_ENTERTAINMENT_TRACK = '/api/content/storage?bucket=Music&file=DJ%20Sparks%20Letto.mp3';
 
 let cachedMusicList = [];
@@ -129,6 +130,7 @@ export async function getLatestMusicFromBucket() {
     return cachedMusicList;
   }
 
+  // Try Music bucket first
   try {
     const { data: files, error } = await supabase.storage
       .from('Music')
@@ -147,6 +149,27 @@ export async function getLatestMusicFromBucket() {
     }
   } catch (err) {
     console.warn('[constants] Could not list Music bucket:', err.message);
+  }
+
+  // Fallback: try introaudio bucket
+  try {
+    const { data: files, error } = await supabase.storage
+      .from('introaudio')
+      .list('', {
+        sortBy: { column: 'created_at', order: 'desc' },
+      });
+
+    if (!error && files && files.length > 0) {
+      const validFiles = files.filter(f => f.name && !f.name.startsWith('.') && (f.name.endsWith('.mp3') || f.name.endsWith('.wav')));
+      if (validFiles.length > 0) {
+        cachedMusicList = validFiles.map(f => `${INTROAUDIO_BUCKET_BASE}${encodeURIComponent(f.name)}`);
+        lastMusicScanTime = now;
+        console.log(`[constants] Scanned 'introaudio' bucket: found ${cachedMusicList.length} tracks. Latest: ${validFiles[0].name}`);
+        return cachedMusicList;
+      }
+    }
+  } catch (err) {
+    console.warn('[constants] Could not list introaudio bucket:', err.message);
   }
 
   return [DEFAULT_ENTERTAINMENT_TRACK];
