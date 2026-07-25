@@ -67,7 +67,7 @@ class RSSProvider extends BaseProvider {
 
     // Cap events per sync to prevent unbounded events table growth.
     // Engine reads news from news_items anyway; events table is secondary.
-    const MAX_EVENTS_PER_SYNC = 30;
+    const MAX_EVENTS_PER_SYNC = 50;
     const cappedEvents = allEvents.slice(0, MAX_EVENTS_PER_SYNC);
 
     this.log(`RSS sync complete: ${cappedEvents.length}/${allEvents.length} events (capped at ${MAX_EVENTS_PER_SYNC})`);

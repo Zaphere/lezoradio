@@ -152,9 +152,18 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
   }, [refetchNowPlaying]);
 
   // "Next" — skip to latest available segment
-  const handleNext = useCallback(() => {
+  const handleNext = useCallback(async () => {
+    try {
+      await fetch('/api/radio/skip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel_id: channelId }),
+      });
+    } catch {
+      // fallback: just refetch
+    }
     refetchNowPlaying();
-  }, [refetchNowPlaying]);
+  }, [channelId, refetchNowPlaying]);
 
   const isLive = userStarted && nowPlaying !== null && nowPlaying.segmentType !== 'silence';
   const isMusicMode = nowPlaying?.segmentType === 'ambient' && nowPlaying.audioType === 'stream';

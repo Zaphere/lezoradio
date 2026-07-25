@@ -258,6 +258,36 @@ export function createApp() {
     }
   });
 
+  // Skip to next content — triggers engine dispatch for a channel
+  app.post('/api/radio/skip', async (req, res) => {
+    try {
+      const channelId = req.body?.channel_id || req.query.channel_id;
+      if (!channelId) {
+        return res.status(400).json({ error: 'Missing channel_id' });
+      }
+
+      const { getEngine } = await import('./engine/radioEngine.js');
+      const engine = getEngine();
+      if (!engine || !engine.running) {
+        return res.status(503).json({ error: 'Engine not running' });
+      }
+
+      // Cancel any pending natural-end timer and dispatch immediately
+      const existing = engine.pendingTimers.get(channelId);
+      if (existing) clearTimeout(existing);
+      engine.pendingTimers.delete(channelId);
+
+      engine.dispatchNextContent(channelId, true).catch(err => {
+        console.error(`[skip] dispatchNextContent failed for ${channelId}:`, err.message);
+      });
+
+      res.json({ ok: true, channel_id: channelId });
+    } catch (err) {
+      console.error('Skip failed:', err);
+      res.status(500).json({ error: err.message || 'Skip failed' });
+    }
+  });
+
   // Diagnostic: list all rows in radio_station_state
   app.get('/api/debug/radio-state', async (_req, res) => {
     try {

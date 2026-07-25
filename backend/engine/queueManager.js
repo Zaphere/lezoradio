@@ -90,17 +90,31 @@ export async function getUnplayedTrack(channelId) {
  * Mark an item as played in a channel.
  */
 export async function markPlayed(channelId, itemType, itemId, stationId = null, metadata = {}) {
+  const insertData = {
+    channel_id: channelId,
+    item_type: itemType,
+    item_id: itemId,
+    station_id: stationId || null,
+  };
+
   const { error } = await supabase
     .from('queue_played_items')
-    .insert({
-      channel_id: channelId,
-      item_type: itemType,
-      item_id: itemId,
-      station_id: stationId,
-    });
+    .insert(insertData);
 
-  if (error && error.code !== '23505') {
-    console.error(`[${new Date().toISOString()}] [queueManager] Failed to mark played:`, error.message);
+  if (error) {
+    if (error.code === '23505') {
+      // Already marked — not an error
+      return;
+    }
+    console.error(`[${new Date().toISOString()}] [queueManager] markPlayed FAILED:`, {
+      code: error.code,
+      message: error.message,
+      channelId,
+      itemType,
+      itemId,
+      stationId,
+      hint: error.hint || null,
+    });
   }
 }
 
@@ -139,11 +153,13 @@ export function getGenreWeights(channelConfig) {
  * @param {string} channelId - Channel ID
  * @param {string} language - Channel language
  * @param {number} maxEvents - Max events to include
+ * @param {Set<string>} [excludeIds] - Event IDs to exclude (in-memory dedup safety net)
  * @returns {Promise<NextSegment>} Next segment info
  */
-export async function getNextContent(channelId, language = 'fr', maxEvents = 3) {
+export async function getNextContent(channelId, language = 'fr', maxEvents = 3, excludeIds = new Set()) {
   // Step 1 & 3: Check LezoTraffic events (highest priority)
-  const lezoEvents = await getUnplayedEventsByProvider(channelId, 'lezotraffic', maxEvents);
+  const lezoEvents = (await getUnplayedEventsByProvider(channelId, 'lezotraffic', maxEvents))
+    .filter(e => !excludeIds.has(e.id));
   if (lezoEvents.length > 0) {
     return {
       type: 'traffic',
@@ -154,7 +170,8 @@ export async function getNextContent(channelId, language = 'fr', maxEvents = 3) 
   }
 
   // Step 4: Check recent news events
-  const newsEvents = await getUnplayedEventsByCategory(channelId, ['news', 'regional', 'local', 'global'], maxEvents);
+  const newsEvents = (await getUnplayedEventsByCategory(channelId, ['news', 'regional', 'local', 'global'], maxEvents))
+    .filter(e => !excludeIds.has(e.id));
   if (newsEvents.length > 0) {
     return {
       type: 'news',
@@ -165,7 +182,8 @@ export async function getNextContent(channelId, language = 'fr', maxEvents = 3) 
   }
 
   // Step 5: Check weather events
-  const weatherEvents = await getUnplayedEventsByCategory(channelId, ['weather'], maxEvents);
+  const weatherEvents = (await getUnplayedEventsByCategory(channelId, ['weather'], maxEvents))
+    .filter(e => !excludeIds.has(e.id));
   if (weatherEvents.length > 0) {
     return {
       type: 'weather',

@@ -34,6 +34,7 @@ class RadioEngine {
     this.backgroundRotationInterval = null;
     this.pendingTimers = new Map(); // channelId -> setTimeout handle
     this._pendingTrack = null; // { channelId, track } — track announced via intro, pending playback
+    this._recentlyPlayed = new Map(); // channelId -> Map<eventId, timestamp> — in-memory dedup safety net
   }
 
   /**
@@ -131,6 +132,37 @@ class RadioEngine {
           console.error(`[${new Date().toISOString()}] [radioEngine] Initial dispatch failed for ${ch.channel_id}:`, err.message);
         });
       });
+    }
+  }
+
+  /**
+   * Check if an event was recently played (in-memory safety net).
+   */
+  _wasRecentlyPlayed(channelId, eventId) {
+    const channelSet = this._recentlyPlayed.get(channelId);
+    if (!channelSet) return false;
+    return channelSet.has(eventId);
+  }
+
+  /**
+   * Mark an event as recently played (in-memory, 30-minute TTL).
+   */
+  _markRecentlyPlayed(channelId, eventId) {
+    if (!this._recentlyPlayed.has(channelId)) {
+      this._recentlyPlayed.set(channelId, new Map());
+    }
+    this._recentlyPlayed.get(channelId).set(eventId, Date.now());
+  }
+
+  /**
+   * Prune recently played entries older than 30 minutes.
+   */
+  _pruneRecentlyPlayed() {
+    const cutoff = Date.now() - 30 * 60 * 1000;
+    for (const [, channelMap] of this._recentlyPlayed) {
+      for (const [eventId, ts] of channelMap) {
+        if (ts < cutoff) channelMap.delete(eventId);
+      }
     }
   }
 
@@ -297,6 +329,37 @@ class RadioEngine {
   async dispatchNextContent(channelId, isInterrupt = false) {
     if (!this.running) return;
 
+    try {
+      await this._dispatchNextContentInner(channelId, isInterrupt);
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] [radioEngine] dispatchNextContent FAILED for ${channelId}:`, err.message);
+      // GUARANTEED FALLBACK: never go silent — write background music directly
+      try {
+        const { getCurrentEntertainmentMusicUrl } = await import('./constants.js');
+        const url = await getCurrentEntertainmentMusicUrl();
+        const state = this.channels.get(channelId);
+        this.updateCurrentSegment(channelId, {
+          segment_type: SEGMENT_TYPES.AMBIENT,
+          segment_id: `fallback-${Date.now()}`,
+          audio_url: url,
+          audio_type: 'stream',
+          title: `Radio Lezo — Fallback`,
+          duration_seconds: 180,
+          language: state?.language || 'fr',
+          voice_id: null,
+          transition_type: 'crossfade',
+          description: 'Fallback Music',
+        });
+        this.scheduleNextContent(channelId, 180 * 1000);
+      } catch (fallbackErr) {
+        console.error(`[${new Date().toISOString()}] [radioEngine] Even fallback failed for ${channelId}:`, fallbackErr.message);
+        // Last resort: retry in 30 seconds
+        this.scheduleNextContent(channelId, 30 * 1000);
+      }
+    }
+  }
+
+  async _dispatchNextContentInner(channelId, isInterrupt = false) {
     const state = this.channels.get(channelId);
     const channel = stationController.getChannel(channelId);
     if (!state || !channel) return;
@@ -313,7 +376,13 @@ class RadioEngine {
       return;
     }
 
-    const nextContent = await queueManager.getNextContent(channelId, language, 3);
+    // Build in-memory dedup set for this channel
+    this._pruneRecentlyPlayed();
+    const excludeIds = this._recentlyPlayed.get(channelId)
+      ? new Set(this._recentlyPlayed.get(channelId).keys())
+      : new Set();
+
+    const nextContent = await queueManager.getNextContent(channelId, language, 3, excludeIds);
 
     if (!nextContent || nextContent.type === 'music') {
       // No priority content — play next background music track
@@ -461,6 +530,7 @@ class RadioEngine {
     // Mark events as played
     for (const event of events) {
       await queueManager.markPlayed(channelId, 'event', event.id, stationId);
+      this._markRecentlyPlayed(channelId, event.id);
       const { data: linkedScripts } = await supabase
         .from('radio_scripts')
         .select('id')
@@ -813,6 +883,7 @@ class RadioEngine {
    */
   async refresh() {
     try {
+      this._pruneRecentlyPlayed();
       await Promise.all([
         stationController.refreshCache(),
         contentNormalizer.refreshCache(),
