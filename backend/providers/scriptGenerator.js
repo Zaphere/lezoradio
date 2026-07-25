@@ -318,6 +318,32 @@ export function generateBulletinIntro(language = 'fr', stationName = 'Radio Lezo
 }
 
 /**
+ * Generate a welcome intro played once on channel start.
+ */
+export function generateWelcomeIntro(language = 'fr', stationName = 'Radio Lezo') {
+  const lines = {
+    fr: `Bienvenue à ${stationName}.`,
+    en: `Welcome to ${stationName}.`,
+    sw: `Karibu ${stationName}.`,
+    ln: `Mulibwanji ${stationName}.`,
+  };
+  return lines[language] || lines.en;
+}
+
+/**
+ * Generate a no-traffic-transitional message.
+ */
+export function generateNoTrafficTransition(language = 'fr', stationName = 'Radio Lezo') {
+  const lines = {
+    fr: `Pas de trafic sur LezoTraffic pour le moment. On continue.`,
+    en: `No LezoTraffic update right now. Moving on.`,
+    sw: `Hakuna LezoTraffic sasa. Tukaendelea.`,
+    ln: `LezoTraffic te. To tupange tuyambulike.`,
+  };
+  return lines[language] || lines.en;
+}
+
+/**
  * Generate a station ID text.
  * @param {string} language - Channel language
  * @param {string} stationName - Station name
@@ -375,10 +401,10 @@ export function generateBulletinApology(language = 'fr', stationName = 'Radio Le
  */
 export function generateTrafficIntro(language = 'fr', stationName = 'Radio Lezo') {
   const lines = {
-    fr: `Maintenant, un point sur le trafic avec ${stationName}.`,
-    en: `Now, a traffic update from ${stationName}.`,
-    sw: `Sasa, taarifa ya trafiki kutoka ${stationName}.`,
-    ln: `Sikawa, sasita ya kokota na ${stationName}.`,
+    fr: `${stationName}, trafic maintenant.`,
+    en: `${stationName}, traffic now.`,
+    sw: `${stationName}, trafiki sasa.`,
+    ln: `${stationName}, kokota kamu.`,
   };
   return lines[language] || lines.en;
 }
@@ -391,10 +417,10 @@ export function generateTrafficIntro(language = 'fr', stationName = 'Radio Lezo'
  */
 export function generateNewsIntro(language = 'fr', stationName = 'Radio Lezo') {
   const lines = {
-    fr: `Passons maintenant à l'actualité sur ${stationName}.`,
-    en: `Now for the news on ${stationName}.`,
-    sw: `Sasa habari kutoka ${stationName}.`,
-    ln: `Sikawa nzela ya sika na ${stationName}.`,
+    fr: `${stationName}, l'actualité.`,
+    en: `${stationName}, news.`,
+    sw: `${stationName}, habari.`,
+    ln: `${stationName}, nzela.`,
   };
   return lines[language] || lines.en;
 }

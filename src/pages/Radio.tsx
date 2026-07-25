@@ -166,7 +166,7 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
   }, [channelId, refetchNowPlaying]);
 
   const isLive = userStarted && nowPlaying !== null && nowPlaying.segmentType !== 'silence';
-  const isMusicMode = nowPlaying?.segmentType === 'ambient' && nowPlaying.audioType === 'stream';
+  const isMusicMode = nowPlaying?.segmentType === 'entertainment' && nowPlaying.audioType === 'stream';
 
   const displayEmoji = isGlobal ? channelOverride!.emoji
     : drcRegion ? drcRegion.emoji
