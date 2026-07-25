@@ -121,7 +121,7 @@ export async function fetchNewsItems(region?: string, category?: string): Promis
   const categoriesToQuery = getCategoryQueryValues(category);
 
   const events = await _silentFetch(async () => {
-    let q = supabase.from('events').select('*').gte('created_at', retentionCutoff()).order('created_at', { ascending: false }).limit(50);
+    let q = supabase.from('events').select('id, provider, title, summary, description, metadata, province, country, category, priority, city, occurred_at, created_at, status').gte('created_at', retentionCutoff()).order('created_at', { ascending: false }).limit(50);
     if (region) q = q.eq('province', region);
     if (category) {
       q = q.in('category', categoriesToQuery);

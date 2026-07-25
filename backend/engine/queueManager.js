@@ -20,7 +20,7 @@ export async function getUnplayedEvents(channelId, limit = 10) {
 
   const { data, error } = await supabase
     .from('events')
-    .select('*')
+    .select('id, provider, category, subcategory, priority, title, summary, description, city, province, country, occurred_at, created_at, status')
     .eq('status', 'active')
     .neq('category', 'geo')
     .gte('created_at', new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString())
@@ -58,16 +58,20 @@ export async function getUnplayedTrack(channelId) {
 
   const playedSet = new Set((playedIds || []).map(r => r.item_id));
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('music_tracks')
     .select('*')
-    .eq('is_available', true)
     .order('created_at', { ascending: false })
     .limit(50);
 
   if (error) {
     console.error(`[${new Date().toISOString()}] [queueManager] Failed to get tracks:`, error.message);
     return null;
+  }
+
+  // Filter out unavailable tracks only if the column exists
+  if (data && data.length > 0 && 'is_available' in data[0]) {
+    data = data.filter(t => t.is_available !== false);
   }
 
   // Prefer unplayed tracks
@@ -107,4 +111,148 @@ export function getGenreWeights(channelConfig) {
     entertainment: 0.2,
     music: 0.2,
   };
+}
+
+/**
+ * Content priority chain result.
+ * @typedef {Object} NextSegment
+ * @property {string|null} type - Segment type: 'traffic', 'news', 'weather', 'music', null
+ * @property {Array} events - Events to include (for non-music types)
+ * @property {Object|null} musicTrack - Music track (for 'music' type)
+ * @property {string|null} transitionText - Transition text to speak before the content
+ */
+
+/**
+ * Determine the next content to play for a channel using the priority chain.
+ *
+ * Priority order:
+ *   1. Unplayed LezoTraffic events
+ *   2. Current background music track continues
+ *   3. Re-check LezoTraffic events
+ *   4. Recent news events
+ *   5. Weather events
+ *   6. Next music track from bucket (fallback)
+ *
+ * @param {string} channelId - Channel ID
+ * @param {string} language - Channel language
+ * @param {number} maxEvents - Max events to include
+ * @returns {Promise<NextSegment>} Next segment info
+ */
+export async function getNextContent(channelId, language = 'fr', maxEvents = 3) {
+  // Step 1 & 3: Check LezoTraffic events (highest priority)
+  const lezoEvents = await getUnplayedEventsByProvider(channelId, 'lezotraffic', maxEvents);
+  if (lezoEvents.length > 0) {
+    return {
+      type: 'traffic',
+      events: lezoEvents,
+      musicTrack: null,
+      transitionText: null, // caller generates transition via scriptGenerator
+    };
+  }
+
+  // Step 4: Check recent news events
+  const newsEvents = await getUnplayedEventsByCategory(channelId, ['news', 'regional', 'local', 'global'], maxEvents);
+  if (newsEvents.length > 0) {
+    return {
+      type: 'news',
+      events: newsEvents,
+      musicTrack: null,
+      transitionText: null,
+    };
+  }
+
+  // Step 5: Check weather events
+  const weatherEvents = await getUnplayedEventsByCategory(channelId, ['weather'], maxEvents);
+  if (weatherEvents.length > 0) {
+    return {
+      type: 'weather',
+      events: weatherEvents,
+      musicTrack: null,
+      transitionText: null,
+    };
+  }
+
+  // Step 6: Next music track from bucket (fallback)
+  const nextTrack = await getNextBackgroundTrack(channelId);
+  return {
+    type: 'music',
+    events: [],
+    musicTrack: nextTrack,
+    transitionText: null,
+  };
+}
+
+/**
+ * Get unplayed events filtered by provider.
+ */
+async function getUnplayedEventsByProvider(channelId, provider, limit = 3) {
+  const playedSet = await getPlayedEventIds(channelId);
+  const { data, error } = await supabase
+    .from('events')
+    .select('*')
+    .eq('status', 'active')
+    .eq('provider', provider)
+    .neq('category', 'geo')
+    .gte('created_at', new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString())
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (error) {
+    console.error(`[queueManager] getUnplayedEventsByProvider error:`, error.message);
+    return [];
+  }
+
+  const unplayed = (data || []).filter(e => !playedSet.has(e.id));
+  return unplayed.slice(0, limit);
+}
+
+/**
+ * Get unplayed events filtered by category array.
+ */
+async function getUnplayedEventsByCategory(channelId, categories, limit = 3) {
+  const playedSet = await getPlayedEventIds(channelId);
+  const { data, error } = await supabase
+    .from('events')
+    .select('*')
+    .eq('status', 'active')
+    .in('category', categories)
+    .neq('category', 'geo')
+    .gte('created_at', new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString())
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (error) {
+    console.error(`[queueManager] getUnplayedEventsByCategory error:`, error.message);
+    return [];
+  }
+
+  const unplayed = (data || []).filter(e => !playedSet.has(e.id));
+  return unplayed.slice(0, limit);
+}
+
+/**
+ * Get the set of played event IDs for a channel.
+ */
+async function getPlayedEventIds(channelId) {
+  const { data } = await supabase
+    .from('queue_played_items')
+    .select('item_id')
+    .eq('channel_id', channelId)
+    .eq('item_type', 'event');
+  return new Set((data || []).map(r => r.item_id));
+}
+
+/**
+ * Get the next background music track from the Music bucket or music_tracks table.
+ */
+export async function getNextBackgroundTrack(channelId) {
+  // Try music_tracks table first
+  const track = await getUnplayedTrack(channelId);
+  if (track) return track;
+
+  // Fall back to Music bucket scanning (from constants)
+  const { getCurrentEntertainmentMusicUrl } = await import('./constants.js');
+  const url = await getCurrentEntertainmentMusicUrl();
+  const name = decodeURIComponent(url.substring(url.lastIndexOf('/') + 1)).replace(/\.[^/.]+$/, '');
+  return { id: null, title: name, audio_url: url, duration_seconds: 180 };
 }

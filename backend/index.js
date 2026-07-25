@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { ingestAllFeeds } from './ingestionService.js';
-import { deleteExpiredContent } from './expiryCleanup.js';
+import { deleteExpiredContent, deleteExpiredEvents } from './expiryCleanup.js';
 import { startApiServer } from './server.js';
 import dotenv from 'dotenv';
 import registry from './providers/providerRegistry.js';
@@ -44,6 +44,11 @@ async function runExpiry() {
     await deleteExpiredContent();
   } catch (error) {
     console.error('Expiry cleanup failed:', error);
+  }
+  try {
+    await deleteExpiredEvents();
+  } catch (error) {
+    console.error('Events expiry cleanup failed:', error);
   }
 }
 
@@ -142,6 +147,9 @@ import('./engine/radioEngine.js').then(({ startEngine }) => {
   console.error('⚠ Radio Engine failed to start:', error.message);
   console.log('  API server continues without broadcast engine.\n');
 });
+
+console.log('Running initial expiry cleanup (events table has never been pruned before this fix)...');
+runExpiry();
 
 console.log(`Scheduling recurring legacy ingestion (cron: ${SCHEDULE})...`);
 const ingestionTask = cron.schedule(SCHEDULE, async () => {

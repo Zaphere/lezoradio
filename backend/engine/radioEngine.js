@@ -1,7 +1,7 @@
 // backend/engine/radioEngine.js
 // Top-level orchestrator — event-driven, coordinates all engine modules.
 
-import { ENGINE_VERSION, SEGMENT_TYPES, DEFAULT_STATE, VOICE_IDS, getCurrentEntertainmentMusicUrl } from './constants.js';
+import { ENGINE_VERSION, SEGMENT_TYPES, DEFAULT_STATE, VOICE_IDS } from './constants.js';
 import * as stationController from './stationController.js';
 import * as languageController from './languageController.js';
 import * as contentNormalizer from './contentNormalizer.js';
@@ -16,6 +16,12 @@ import { supabase } from '../supabaseClient.js';
 import {
   generateEventScript,
   generateBulletinIntro,
+  generateBulletinApology,
+  generateTrafficIntro,
+  generateNewsIntro,
+  generateWeatherIntro,
+  generateMusicIntro,
+  generateMusicOutro,
   generateStationIdText,
   generateTimeAnnouncement,
 } from '../providers/scriptGenerator.js';
@@ -68,6 +74,13 @@ class RadioEngine {
     // Ensure voices exist for all channels — seed if missing
     await this.ensureVoices(channels);
 
+    // Ensure global-main channel exists (for frequency-dial/global frontend channels)
+    await this.ensureGlobalMainChannel(channels);
+
+    // Re-read channels in case we added global-main
+    await stationController.refreshCache();
+    channels = stationController.getAllChannels();
+
     // Initialize state for each channel
     for (const ch of channels) {
       const state = playbackController.createChannelState(ch.channel_id, ch.station_id, ch.language || 'fr');
@@ -78,7 +91,7 @@ class RadioEngine {
     // Start event listener
     eventListener.startEventListener((event) => this.onNewContent(event));
 
-    // Start scheduler
+    // Start scheduler — uses refreshed channels (includes global-main if now created)
     eventScheduler.setCallbacks({
       onBulletin: (data) => this.triggerBulletin(data),
       onStationId: (data) => this.triggerStationId(data),
@@ -102,20 +115,17 @@ class RadioEngine {
       radioWsServer.startRadioWsServer(httpServer, '/ws/radio');
     }
 
-    // Write initial ambient (background music) for each channel so frontend has something to play
+    // Write initial background music for each channel
     for (const ch of channels) {
-      this.writeAmbientSegment(ch.channel_id);
+      this.writeBackgroundSegment(ch.channel_id);
     }
 
-    // Trigger initial bulletins so there's content for the first listener
+    // Dispatch first content via priority chain for each channel
     for (const ch of channels) {
-      this.triggerBulletin({
-        channelId: ch.channel_id,
-        stationId: ch.station_id,
-        label: `${ch.station_name || 'Radio Lezo'} - Initial Bulletin`,
-        bulletinId: `initial-${Date.now()}`,
-      }).catch(err => {
-        console.error(`[${new Date().toISOString()}] [radioEngine] Initial bulletin failed for ${ch.channel_id}:`, err.message);
+      setImmediate(() => {
+        this.dispatchNextContent(ch.channel_id).catch(err => {
+          console.error(`[${new Date().toISOString()}] [radioEngine] Initial dispatch failed for ${ch.channel_id}:`, err.message);
+        });
       });
     }
   }
@@ -165,36 +175,21 @@ class RadioEngine {
   }
 
   /**
-   * Trigger a bulletin for a channel — uses scriptGenerator, not hardcoded text.
+   * Resolve voice for a content segment.
    */
-  resolveBulletinVoice(stationId, channel, events, bulletinId) {
-    const channelLang = channel?.language || 'fr';
-    const hasAlerts = events.some(e => e.category === 'alert' || e.category === 'emergency');
-    const trafficOnly = events.length > 0 && events.every(
-      e => e.category === 'traffic' || e.provider === 'lezotraffic',
-    );
-    const isScheduledNews = bulletinId
-      && !String(bulletinId).startsWith('auto-')
-      && !String(bulletinId).startsWith('initial-');
+  resolveVoice(stationId, channel, contentType, language) {
+    const channelLang = channel?.language || language || 'fr';
 
-    if (hasAlerts) {
+    if (contentType === 'traffic') {
+      const lang = (channelLang === 'sw' || channelLang === 'ln') ? channelLang : 'fr';
       return {
-        language: 'fr',
-        voice: languageController.resolveVoice(stationId, 'fr', 'alert')
-          || languageController.resolveVoice(stationId, 'fr', 'bulletin')
-          || { voice_id: VOICE_IDS.FRENCH_ADAM, language: 'fr', style: 'alert' },
+        language: lang,
+        voice: languageController.resolveVoice(stationId, lang, 'formal')
+          || { voice_id: VOICE_IDS.SWAHILI_FEMALE, language: lang, style: 'formal' },
       };
     }
 
-    if (trafficOnly && channelLang === 'sw') {
-      return {
-        language: 'sw',
-        voice: languageController.resolveVoice(stationId, 'sw', 'formal')
-          || { voice_id: VOICE_IDS.SWAHILI_FEMALE, language: 'sw', style: 'formal' },
-      };
-    }
-
-    if (isScheduledNews) {
+    if (contentType === 'alert' || contentType === 'bulletin') {
       return {
         language: 'fr',
         voice: languageController.resolveVoice(stationId, 'fr', 'bulletin')
@@ -209,103 +204,218 @@ class RadioEngine {
     return { language: channelLang, voice };
   }
 
-  async triggerBulletin(data) {
-    const { channelId, stationId, label, bulletinId } = data;
-    console.log(`[${new Date().toISOString()}] [radioEngine] Bulletin triggered for ${channelId}: ${label}`);
+  /**
+   * Write a background music segment (ambient type).
+   * Plays on the background layer — ducked when foreground TTS plays.
+   * After the track finishes, dispatches next content via priority chain.
+   */
+  async writeBackgroundSegment(channelId) {
+    try {
+      const next = await queueManager.getNextBackgroundTrack(channelId);
+      if (!next) {
+        console.warn(`[radioEngine] No background tracks available for ${channelId}`);
+        return;
+      }
 
+      const state = this.channels.get(channelId);
+      const channel = stationController.getChannel(channelId);
+      const stationName = channel?.name || channel?.station_name || 'Radio Lezo';
+
+      const trackName = next.title || decodeURIComponent((next.audio_url || '').substring((next.audio_url || '').lastIndexOf('/') + 1)).replace(/\.[^/.]+$/, '');
+      const durationSeconds = next.duration_seconds || 180;
+
+      console.log(`[${new Date().toISOString()}] [radioEngine] Background segment for ${channelId}: ${trackName} (${durationSeconds}s)`);
+
+      this.updateCurrentSegment(channelId, {
+        segment_type: SEGMENT_TYPES.AMBIENT,
+        segment_id: `bg-${Date.now()}`,
+        audio_url: next.audio_url,
+        audio_type: 'stream',
+        title: `${stationName} — ${trackName}`,
+        duration_seconds: durationSeconds,
+        language: state?.language || 'fr',
+        voice_id: null,
+        transition_type: 'crossfade',
+        description: 'Background Music',
+      });
+
+      // After background track finishes, dispatch next content via priority chain
+      this.scheduleNextContent(channelId, durationSeconds * 1000);
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] [radioEngine] writeBackgroundSegment failed for ${channelId}:`, err.message);
+    }
+  }
+
+  /**
+   * Schedule the next content dispatch after a delay.
+   */
+  scheduleNextContent(channelId, delayMs) {
+    setTimeout(() => {
+      if (!this.running) return;
+      this.dispatchNextContent(channelId).catch(err =>
+        console.error(`[radioEngine] dispatchNextContent failed for ${channelId}:`, err.message)
+      );
+    }, delayMs);
+  }
+
+  /**
+   * Dispatch next content via priority chain.
+   * Called after a segment ends (background track or foreground TTS).
+   *
+   * Priority:
+   *   1. Traffic events (LezoTraffic)
+   *   2. News events
+   *   3. Weather events
+   *   4. Next background music track
+   */
+  async dispatchNextContent(channelId) {
+    if (!this.running) return;
+
+    const state = this.channels.get(channelId);
     const channel = stationController.getChannel(channelId);
-    const stationName = channel?.station_name || 'Radio Lezo';
+    if (!state || !channel) return;
 
-    // Limit to 3 events per bulletin to avoid exceeding ElevenLabs 5000 character limit
-    const events = await queueManager.getUnplayedEvents(channelId, 3);
-    const { language, voice } = this.resolveBulletinVoice(stationId, channel, events, bulletinId);
+    const language = channel.language || state.language || 'fr';
+    const stationId = state.stationId || channel.station_id;
+    const stationName = channel.name || channel.station_name || 'Radio Lezo';
 
-    if (voice) {
-      console.log(`[${new Date().toISOString()}] [radioEngine] Bulletin voice: ${voice.voice_id} (${language}) for ${channelId}`);
-    }
-    console.log(`[${new Date().toISOString()}] [radioEngine] Found ${events.length} unplayed events for ${channelId}`);
+    const nextContent = await queueManager.getNextContent(channelId, language, 3);
 
-    let bulletinText;
-    if (events.length > 0) {
-      // Generate bulletin intro + per-event scripts
-      const intro = generateBulletinIntro(language, stationName, events.length);
-      const eventScripts = events.map(e => generateEventScript(e, language));
-      bulletinText = `${intro} ${eventScripts.join('. ')}`;
-    } else {
-      // Fallback: generic bulletin with no events
-      bulletinText = generateBulletinIntro(language, stationName, 0);
-    }
+    if (!nextContent || nextContent.type === 'music') {
+      // No priority content — play next background music track
+      if (nextContent?.musicTrack) {
+        // Generate intro announcement for the track
+        const trackName = nextContent.musicTrack.title || 'Music';
+        const introText = generateMusicIntro(language, trackName, stationName);
+        const voice = this.resolveVoice(stationId, channel, 'bulletin', language);
 
-    if (voice) {
-      console.log(`[${new Date().toISOString()}] [radioEngine] TTS voice resolved: ${voice.voice_id} for ${channelId}/${language}`);
-      const ttsResult = await ttsGenerator.getOrGenerate(bulletinText, voice.voice_id, language);
-
-      if (ttsResult) {
-        console.log(`[${new Date().toISOString()}] [radioEngine] TTS generated for ${channelId}: ${ttsResult.audioUrl?.substring(0, 80)}`);
-        const topEvent = events[0] || {};
-
-        // Estimate duration based on text length (avg 15 chars/sec + 2s buffer)
-        const durationSeconds = Math.ceil(bulletinText.length / 15) + 2;
-        console.log(`[${new Date().toISOString()}] [radioEngine] Estimated bulletin duration: ${durationSeconds}s (${bulletinText.length} chars)`);
-
-        this.updateCurrentSegment(channelId, {
-          segment_type: SEGMENT_TYPES.BULLETIN,
-          segment_id: `bulletin-${bulletinId || Date.now()}`,
-          audio_url: ttsResult.audioUrl,
-          audio_type: 'tts',
-          title: label || `${stationName} Bulletin`,
-          duration_seconds: durationSeconds,
-          language,
-          voice_id: voice.voice_id,
-          // Source attribution
-          provider: topEvent.provider || null,
-          city: topEvent.city || null,
-          province: topEvent.province || null,
-          description: bulletinText.substring(0, 500),
-        });
-
-        // Mark events as played PER CHANNEL (do NOT mark global status as 'processed' —
-        // that would starve all future bulletins. queue_played_items handles per-channel tracking.)
-        for (const event of events) {
-          await queueManager.markPlayed(channelId, 'event', event.id);
-          // Also mark linked radio_scripts as read
-          const { data: linkedScripts } = await supabase
-            .from('radio_scripts')
-            .select('id')
-            .eq('news_item_id', event.id);
-          if (linkedScripts && linkedScripts.length > 0) {
-            const scriptIds = linkedScripts.map(s => s.id);
-            await supabase.from('radio_scripts').update({ is_read: true }).in('id', scriptIds);
+        if (voice.voice) {
+          const ttsResult = await ttsGenerator.getOrGenerate(introText, voice.voice.voice_id, language);
+          if (ttsResult) {
+            const introDuration = Math.ceil(introText.length / 15) + 1;
+            this.updateCurrentSegment(channelId, {
+              segment_type: SEGMENT_TYPES.ANNOUNCEMENT,
+              segment_id: `music-intro-${Date.now()}`,
+              audio_url: ttsResult.audioUrl,
+              audio_type: 'tts',
+              title: `${stationName} — ${trackName}`,
+              duration_seconds: introDuration,
+              language,
+              voice_id: voice.voice.voice_id,
+              transition_type: 'duck',
+              description: `Up next: ${trackName}`,
+            });
+            // After intro, start background track
+            this.scheduleNextContent(channelId, introDuration * 1000);
+            return;
           }
         }
 
-        // Clear queue_played_items older than 6 hours so articles can recycle
-        const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
-        await supabase
-          .from('queue_played_items')
-          .delete()
-          .eq('channel_id', channelId)
-          .lt('created_at', sixHoursAgo);
-
-        // Auto-revert to entertainment after bulletin finishes
-        setTimeout(() => {
-          this.writeEntertainmentSegment(channelId).catch(err =>
-            console.error(`[radioEngine] Post-bulletin entertainment failed for ${channelId}:`, err.message)
-          );
-        }, durationSeconds * 1000);
-
+        // Fall through to write background directly if intro TTS fails
+        this.writeBackgroundSegment(channelId);
       } else {
-        console.warn(`[${new Date().toISOString()}] [radioEngine] TTS generation failed for ${channelId} — reverting to entertainment to maintain cycle`);
-        this.writeEntertainmentSegment(channelId).catch(err =>
-          console.error(`[radioEngine] Entertainment fallback failed for ${channelId}:`, err.message)
-        );
+        this.writeBackgroundSegment(channelId);
       }
-    } else {
-      console.warn(`[${new Date().toISOString()}] [radioEngine] No voice found for ${channelId}/${language} (stationId=${stationId}) — reverting to entertainment`);
-      this.writeEntertainmentSegment(channelId).catch(err =>
-        console.error(`[radioEngine] Entertainment fallback (no-voice) failed for ${channelId}:`, err.message)
-      );
+      return;
     }
+
+    // Priority content: traffic, news, or weather
+    const events = nextContent.events || [];
+    if (events.length === 0) {
+      this.writeBackgroundSegment(channelId);
+      return;
+    }
+
+    // Determine transition type and voice
+    const contentType = nextContent.type;
+    const voice = this.resolveVoice(stationId, channel, contentType, language);
+
+    if (!voice.voice) {
+      console.warn(`[radioEngine] No voice for ${contentType} on ${channelId}`);
+      this.writeBackgroundSegment(channelId);
+      return;
+    }
+
+    // Generate apology transition (background track was playing)
+    const apologyText = generateBulletinApology(voice.language, stationName);
+
+    // Generate content intro
+    let contentIntro;
+    switch (contentType) {
+      case 'traffic':
+        contentIntro = generateTrafficIntro(voice.language, stationName);
+        break;
+      case 'news':
+        contentIntro = generateNewsIntro(voice.language, stationName);
+        break;
+      case 'weather':
+        contentIntro = generateWeatherIntro(voice.language, stationName);
+        break;
+      default:
+        contentIntro = generateBulletinIntro(voice.language, stationName, events.length);
+    }
+
+    // Generate event scripts
+    const eventScripts = events.map(e => generateEventScript(e, voice.language));
+    const contentText = `${contentIntro} ${eventScripts.join('. ')}`;
+    const fullText = `${apologyText} ${contentText}`;
+
+    console.log(`[${new Date().toISOString()}] [radioEngine] Generating ${contentType} TTS for ${channelId} (${fullText.length} chars)`);
+
+    const ttsResult = await ttsGenerator.getOrGenerate(fullText, voice.voice.voice_id, voice.language);
+    if (!ttsResult) {
+      console.warn(`[${new Date().toISOString()}] [radioEngine] TTS generation failed for ${contentType} on ${channelId} — playing background`);
+      this.writeBackgroundSegment(channelId);
+      return;
+    }
+
+    const durationSeconds = Math.ceil(fullText.length / 15) + 2;
+    const topEvent = events[0] || {};
+
+    this.updateCurrentSegment(channelId, {
+      segment_type: contentType === 'traffic' ? SEGMENT_TYPES.BULLETIN : SEGMENT_TYPES.BULLETIN,
+      segment_id: `${contentType}-${Date.now()}`,
+      audio_url: ttsResult.audioUrl,
+      audio_type: 'tts',
+      title: `${stationName} — ${contentType === 'traffic' ? 'Traffic Update' : contentType === 'weather' ? 'Weather' : 'News Update'}`,
+      duration_seconds: durationSeconds,
+      language: voice.language,
+      voice_id: voice.voice.voice_id,
+      transition_type: 'duck',
+      duck_volume: 0.06,
+      provider: topEvent.provider || null,
+      city: topEvent.city || null,
+      province: topEvent.province || null,
+      description: fullText.substring(0, 500),
+    });
+
+    // Mark events as played
+    for (const event of events) {
+      await queueManager.markPlayed(channelId, 'event', event.id);
+      const { data: linkedScripts } = await supabase
+        .from('radio_scripts')
+        .select('id')
+        .eq('news_item_id', event.id);
+      if (linkedScripts && linkedScripts.length > 0) {
+        await supabase.from('radio_scripts').update({ is_read: true }).in('id', linkedScripts.map(s => s.id));
+      }
+    }
+
+    // Clean old played items
+    const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+    await supabase.from('queue_played_items').delete().eq('channel_id', channelId).lt('created_at', sixHoursAgo);
+
+    // After TTS finishes, dispatch next content
+    this.scheduleNextContent(channelId, durationSeconds * 1000);
+  }
+
+  /**
+   * Trigger a bulletin (called by scheduler). Delegates to dispatchNextContent.
+   */
+  async triggerBulletin(data) {
+    const { channelId } = data;
+    console.log(`[${new Date().toISOString()}] [radioEngine] Bulletin triggered for ${channelId}: ${data.label}`);
+    await this.dispatchNextContent(channelId);
   }
 
   /**
@@ -336,9 +446,9 @@ class RadioEngine {
           voice_id: voice.voice_id,
         });
         
-        // Auto-revert to ambient music after station ID finishes
+        // Resume background music after station ID finishes
         setTimeout(() => {
-          this.writeAmbientSegment(channelId);
+          this.writeBackgroundSegment(channelId);
         }, durationSeconds * 1000);
       }
     }
@@ -372,9 +482,9 @@ class RadioEngine {
           voice_id: voice.voice_id,
         });
         
-        // Auto-revert to ambient music after time announcement finishes
+        // Resume background music after time announcement finishes
         setTimeout(() => {
-          this.writeAmbientSegment(channelId);
+          this.writeBackgroundSegment(channelId);
         }, durationSeconds * 1000);
       }
     }
@@ -433,6 +543,7 @@ class RadioEngine {
         { channel_id: 'kinshasa-main', name: 'Kinshasa Main', lang: 'ln', freq: 88.1, emoji: '🇨🇩', desc: 'Primary Kinshasa broadcast channel in Lingala' },
         { channel_id: 'goma-main', name: 'Goma Main', lang: 'sw', freq: 92.5, emoji: '🌋', desc: 'Primary Goma broadcast channel in Swahili' },
         { channel_id: 'lubumbashi-main', name: 'Lubumbashi Main', lang: 'sw', freq: 95.3, emoji: '⛏️', desc: 'Primary Lubumbashi broadcast channel in Swahili' },
+        { channel_id: 'global-main', name: 'Global Main', lang: 'fr', freq: 94.1, emoji: '🌍', desc: 'Global news and entertainment channel' },
       ];
       const voiceMap = {};
       for (const v of voices) voiceMap[v.language] = v.voice_id;
@@ -451,7 +562,7 @@ class RadioEngine {
           priority: 1,
         }, { onConflict: 'channel_id' });
       }
-      console.log(`[radioEngine] Auto-seeded ${channelDefs.length} channels`);
+      console.log(`[radioEngine] Auto-seeded ${channelDefs.length} channels (including global-main)`);
 
       // Clean stale UUID-based radio_station_state rows
       const { data: staleRows } = await supabase.from('radio_station_state').select('channel_id');
@@ -517,76 +628,49 @@ class RadioEngine {
   }
 
   /**
-   * Write an Entertainment segment (music/podcast track from Music bucket) for a channel.
-   * Plays on the TRACK layer so controls (play/pause/seek) work.
-   * After the entertainment track ends, the next news bulletin is triggered automatically.
-   * All async operations are fully guarded — this method NEVER throws.
+   * Ensure the global-main channel exists in station_channels.
+   * Creates it under the first available station if missing.
    */
-  async writeEntertainmentSegment(channelId) {
-    try {
-      const bgUrl = await getCurrentEntertainmentMusicUrl();
-      const state = this.channels.get(channelId);
-      const channel = stationController.getChannel(channelId);
-      const stationName = channel?.name || channel?.station_name || 'Radio Lezo';
-      const stationId = state?.stationId || channel?.station_id;
+  async ensureGlobalMainChannel(channels) {
+    const hasGlobalMain = channels.some(c => c.channel_id === 'global-main');
+    if (hasGlobalMain) return;
 
-      const trackName = decodeURIComponent(bgUrl.substring(bgUrl.lastIndexOf('/') + 1));
-      console.log(`[${new Date().toISOString()}] [radioEngine] Writing Entertainment segment for ${channelId}: ${trackName}`);
+    console.log(`[${new Date().toISOString()}] [radioEngine] global-main channel missing — creating...`);
+    const stationIds = [...new Set(channels.map(c => c.station_id))];
+    if (stationIds.length === 0) return;
 
-      // Entertainment plays for 3 minutes, then we trigger next bulletin
-      const entertainmentDurationSeconds = 180;
+    const stationId = stationIds[0];
+    const { error } = await supabase.from('station_channels').upsert({
+      station_id: stationId,
+      channel_id: 'global-main',
+      name: 'Global Main',
+      description: 'Global news and entertainment channel',
+      frequency: 94.1,
+      emoji: '🌍',
+      language: 'fr',
+      primary_voice_id: VOICE_IDS.FRENCH_ADAM,
+      is_active: true,
+      priority: 1,
+    }, { onConflict: 'channel_id' });
 
-      this.updateCurrentSegment(channelId, {
-        segment_type: SEGMENT_TYPES.TRACK,
-        segment_id: `entertainment-${Date.now()}`,
-        audio_url: bgUrl,
-        audio_type: 'stream',
-        title: `${stationName} — ${trackName.replace(/\.[^/.]+$/, '')}`,
-        duration_seconds: entertainmentDurationSeconds,
-        language: state?.language || 'fr',
-        voice_id: null,
-        transition_type: 'crossfade',
-        description: 'Entertainment & Music',
-      });
-
-      // After entertainment finishes, automatically trigger the next bulletin
-      setTimeout(() => {
-        if (!this.running) return;
-        console.log(`[${new Date().toISOString()}] [radioEngine] Entertainment ended for ${channelId}, triggering next bulletin`);
-        this.triggerBulletin({
-          channelId,
-          stationId,
-          label: `${stationName} — News Update`,
-          bulletinId: `auto-${Date.now()}`,
-        }).catch(err => {
-          console.error(`[radioEngine] Auto-bulletin failed for ${channelId}:`, err.message);
-          this.writeEntertainmentSegment(channelId).catch(e =>
-            console.error(`[radioEngine] Fallback entertainment also failed for ${channelId}:`, e.message)
-          );
-        });
-      }, entertainmentDurationSeconds * 1000);
-    } catch (err) {
-      console.error(`[${new Date().toISOString()}] [radioEngine] writeEntertainmentSegment failed for ${channelId}:`, err.message);
+    if (error) {
+      console.error(`[radioEngine] Failed to create global-main channel:`, error.message);
+    } else {
+      console.log(`[${new Date().toISOString()}] [radioEngine] Created global-main channel under station ${stationId}`);
     }
   }
 
   /**
-   * Legacy alias — all callers of writeAmbientSegment now route to writeEntertainmentSegment.
-   */
-  writeAmbientSegment(channelId) {
-    return this.writeEntertainmentSegment(channelId).catch(err =>
-      console.error(`[radioEngine] writeAmbientSegment failed for ${channelId}:`, err.message)
-    );
-  }
-
-  /**
-   * Rotate entertainment music across all channels.
+   * Refresh background music for all channels — dispatches next content via priority chain.
+   * Used by the periodic rotation interval.
    */
   rotateBackgroundMusic() {
     if (!this.running) return;
-    console.log(`[${new Date().toISOString()}] [radioEngine] Rotating entertainment music for ${this.channels.size} channels`);
+    console.log(`[${new Date().toISOString()}] [radioEngine] Rotating background music for ${this.channels.size} channels`);
     for (const channelId of this.channels.keys()) {
-      this.writeEntertainmentSegment(channelId);
+      this.dispatchNextContent(channelId).catch(err =>
+        console.error(`[radioEngine] rotateBackgroundMusic failed for ${channelId}:`, err.message)
+      );
     }
   }
 

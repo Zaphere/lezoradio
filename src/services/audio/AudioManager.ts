@@ -170,20 +170,29 @@ export class AudioManager {
 
   /* ─── Background Layer ─── */
 
-  startBackground(url: string): void {
+  private onBackgroundEnd: (() => void) | null = null;
+
+  setBackgroundEndCallback(cb: (() => void) | null): void {
+    this.onBackgroundEnd = cb;
+  }
+
+  startBackground(url: string, options?: { loop?: boolean }): void {
     const existing = this.layers.background;
     if (existing.element) {
       if (existing.state !== 'idle') return;
       this.stopBackground(false);
     }
 
+    const loop = options?.loop ?? false;
     const audio = new Audio(url);
-    audio.loop = true;
+    audio.loop = loop;
     audio.preload = 'auto';
     audio.volume = 0;
 
     const startPlayback = () => {
-      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+      if (!loop && Number.isFinite(audio.duration) && audio.duration > 0) {
+        audio.currentTime = 0;
+      } else if (Number.isFinite(audio.duration) && audio.duration > 0) {
         audio.currentTime = Math.random() * audio.duration;
       }
       void audio.play().catch(() => {});
@@ -192,6 +201,16 @@ export class AudioManager {
 
     existing.element = audio;
     existing.state = 'loading';
+
+    // Fire onBackgroundEnd when a non-looping track finishes
+    if (!loop) {
+      audio.addEventListener('ended', () => {
+        if (this.onBackgroundEnd) {
+          // Small delay to avoid rapid re-triggering
+          setTimeout(() => this.onBackgroundEnd!(), TIMING.PRE_TRACK_GAP_MS);
+        }
+      }, { once: true });
+    }
 
     if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
       startPlayback();

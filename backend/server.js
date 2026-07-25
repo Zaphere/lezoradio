@@ -51,7 +51,7 @@ async function getNewsContent(region, category) {
 
   let eventsQuery = serviceSupabase
     .from('events')
-    .select('*')
+    .select('id, provider, title, summary, description, metadata, province, country, category, priority, city, occurred_at, created_at, status')
     .gte('created_at', retentionCutoff())
     .in('category', categoriesToQuery)
     .order('created_at', { ascending: false })
@@ -301,7 +301,7 @@ export function createApp() {
       const { data: existing } = await serviceSupabase
         .from('station_channels')
         .select('channel_id')
-        .in('channel_id', ['kinshasa-main', 'goma-main', 'lubumbashi-main']);
+        .in('channel_id', ['kinshasa-main', 'goma-main', 'lubumbashi-main', 'global-main']);
       const existingIds = new Set((existing || []).map(r => r.channel_id));
 
       // Build voice map: language -> voice_id
@@ -314,6 +314,7 @@ export function createApp() {
         { channel_id: 'kinshasa-main', name: 'Kinshasa Main', lang: 'ln', freq: 88.1, emoji: '🇨🇩', desc: 'Primary Kinshasa broadcast channel in Lingala', priority: 1 },
         { channel_id: 'goma-main', name: 'Goma Main', lang: 'sw', freq: 92.5, emoji: '🌋', desc: 'Primary Goma broadcast channel in Swahili', priority: 1 },
         { channel_id: 'lubumbashi-main', name: 'Lubumbashi Main', lang: 'sw', freq: 95.3, emoji: '⛏️', desc: 'Primary Lubumbashi broadcast channel in Swahili', priority: 1 },
+        { channel_id: 'global-main', name: 'Global Main', lang: 'fr', freq: 94.1, emoji: '🌍', desc: 'Global news and entertainment channel', priority: 1 },
       ];
 
       let inserted = 0;
@@ -344,7 +345,7 @@ export function createApp() {
       const { data: staleRows } = await serviceSupabase
         .from('radio_station_state')
         .select('channel_id');
-      const validIds = new Set(['kinshasa-main', 'goma-main', 'lubumbashi-main']);
+      const validIds = new Set(['kinshasa-main', 'goma-main', 'lubumbashi-main', 'global-main']);
       const staleIds = (staleRows || []).filter(r => !validIds.has(r.channel_id)).map(r => r.channel_id);
       let deleted = 0;
       if (staleIds.length > 0) {

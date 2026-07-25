@@ -123,10 +123,10 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
 
   const channel = getChannel(currentFreq) ?? CHANNELS[0];
 
-  // Channel ID for the backend engine — maps region slug to the backend's channel_id format
-  // Backend uses 'kinshasa-main', 'goma-main', 'lubumbashi-main'
+  // Channel ID for the backend engine — maps to backend channel_id format
+  // Backend channels: 'kinshasa-main', 'goma-main', 'lubumbashi-main', 'global-main'
   const channelId = useMemo(() => {
-    if (channelOverride) return channelOverride.frequency;
+    if (channelOverride) return 'global-main';
     if (drcRegion) return `${drcRegion.slug}-main`;
     return station.id;
   }, [channelOverride, drcRegion, station]);
@@ -157,7 +157,7 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
   }, [refetchNowPlaying]);
 
   const isLive = userStarted && nowPlaying !== null && nowPlaying.segmentType !== 'silence';
-  const isMusicMode = nowPlaying?.segmentType === 'track' && nowPlaying.audioType === 'ambient';
+  const isMusicMode = nowPlaying?.segmentType === 'ambient' && nowPlaying.audioType === 'stream';
 
   const displayEmoji = isGlobal ? channelOverride!.emoji
     : drcRegion ? drcRegion.emoji

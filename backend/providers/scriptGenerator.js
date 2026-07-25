@@ -352,6 +352,104 @@ export function generateTimeAnnouncement(language = 'fr', hour, minute) {
 }
 
 /**
+ * Generate an apology/transition line when interrupting a music track for a bulletin.
+ * @param {string} language - Channel language
+ * @param {string} stationName - Station name
+ * @returns {string} Apology text
+ */
+export function generateBulletinApology(language = 'fr', stationName = 'Radio Lezo') {
+  const lines = {
+    fr: `Nous interrompons cette musique pour un bulletin d'information de ${stationName}.`,
+    en: `We interrupt this music for a news bulletin from ${stationName}.`,
+    sw: `Tunakatisha muziki huu kwa ripoti ya habari kutoka ${stationName}.`,
+    ln: `Tozongisa miziki oyo mpo na tatomi ya sika ya ${stationName}.`,
+  };
+  return lines[language] || lines.en;
+}
+
+/**
+ * Generate a traffic segment intro line.
+ * @param {string} language - Channel language
+ * @param {string} stationName - Station name
+ * @returns {string} Traffic intro text
+ */
+export function generateTrafficIntro(language = 'fr', stationName = 'Radio Lezo') {
+  const lines = {
+    fr: `Maintenant, un point sur le trafic avec ${stationName}.`,
+    en: `Now, a traffic update from ${stationName}.`,
+    sw: `Sasa, taarifa ya trafiki kutoka ${stationName}.`,
+    ln: `Sikawa, sasita ya kokota na ${stationName}.`,
+  };
+  return lines[language] || lines.en;
+}
+
+/**
+ * Generate a news segment intro line.
+ * @param {string} language - Channel language
+ * @param {string} stationName - Station name
+ * @returns {string} News intro text
+ */
+export function generateNewsIntro(language = 'fr', stationName = 'Radio Lezo') {
+  const lines = {
+    fr: `Passons maintenant à l'actualité sur ${stationName}.`,
+    en: `Now for the news on ${stationName}.`,
+    sw: `Sasa habari kutoka ${stationName}.`,
+    ln: `Sikawa nzela ya sika na ${stationName}.`,
+  };
+  return lines[language] || lines.en;
+}
+
+/**
+ * Generate a weather segment intro line.
+ * @param {string} language - Channel language
+ * @param {string} stationName - Station name
+ * @returns {string} Weather intro text
+ */
+export function generateWeatherIntro(language = 'fr', stationName = 'Radio Lezo') {
+  const lines = {
+    fr: `Et maintenant, la météo sur ${stationName}.`,
+    en: `And now, the weather on ${stationName}.`,
+    sw: `Na sasa, hali ya hewa kutoka ${stationName}.`,
+    ln: `Mpe sikawa, mbula na ${stationName}.`,
+  };
+  return lines[language] || lines.en;
+}
+
+/**
+ * Generate a music track intro line (what's coming up next).
+ * @param {string} language - Channel language
+ * @param {string} trackName - Name of the track
+ * @param {string} stationName - Station name
+ * @returns {string} Music intro text
+ */
+export function generateMusicIntro(language = 'fr', trackName = '', stationName = 'Radio Lezo') {
+  const lines = {
+    fr: `Et voici ${trackName} sur ${stationName}.`,
+    en: `Now playing ${trackName} on ${stationName}.`,
+    sw: `Sasa tunacheza ${trackName} kwenye ${stationName}.`,
+    ln: `Sikawa tobeti ${trackName} na ${stationName}.`,
+  };
+  return lines[language] || lines.en;
+}
+
+/**
+ * Generate a music track outro/commentary line.
+ * @param {string} language - Channel language
+ * @param {string} trackName - Name of the track
+ * @param {string} stationName - Station name
+ * @returns {string} Music outro text
+ */
+export function generateMusicOutro(language = 'fr', trackName = '', stationName = 'Radio Lezo') {
+  const lines = {
+    fr: `C'était ${trackName} sur ${stationName}. Restez à l'écoute.`,
+    en: `That was ${trackName} on ${stationName}. Stay tuned.`,
+    sw: `Hiyo ilikuwa ${trackName} kwenye ${stationName}. Endelea kusikiliza.`,
+    ln: `Wana ke ${trackName} na ${stationName}. Kenda koyoka.`,
+  };
+  return lines[language] || lines.en;
+}
+
+/**
  * Validate that a language is supported.
  */
 export function isLanguageSupported(language) {
