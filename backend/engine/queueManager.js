@@ -60,7 +60,7 @@ export async function getUnplayedTrack(channelId) {
 
   let { data, error } = await supabase
     .from('music_tracks')
-    .select('id, title, artist, audio_url, duration_ms, is_available, created_at')
+    .select('id, title, artist, audio_url, duration_ms, created_at')
     .order('created_at', { ascending: false })
     .limit(50);
 
@@ -69,7 +69,7 @@ export async function getUnplayedTrack(channelId) {
     return null;
   }
 
-  // Filter out unavailable tracks only if the column exists
+  // Filter out unavailable tracks if the column exists in returned data
   if (data && data.length > 0 && 'is_available' in data[0]) {
     data = data.filter(t => t.is_available !== false);
   }
@@ -89,13 +89,14 @@ export async function getUnplayedTrack(channelId) {
 /**
  * Mark an item as played in a channel.
  */
-export async function markPlayed(channelId, itemType, itemId, metadata = {}) {
+export async function markPlayed(channelId, itemType, itemId, stationId = null, metadata = {}) {
   const { error } = await supabase
     .from('queue_played_items')
     .insert({
       channel_id: channelId,
       item_type: itemType,
       item_id: itemId,
+      station_id: stationId,
     });
 
   if (error && error.code !== '23505') {
@@ -195,7 +196,7 @@ async function getUnplayedEventsByProvider(channelId, provider, limit = 3) {
     .eq('status', 'active')
     .eq('provider', provider)
     .neq('category', 'geo')
-    .gte('created_at', new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString())
+    .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
     .order('created_at', { ascending: false })
     .limit(50);
 
@@ -218,8 +219,7 @@ async function getUnplayedEventsByCategory(channelId, categories, limit = 3) {
     .select('id, title, summary, provider, category, subcategory, city, province, country, priority, occurred_at, created_at')
     .eq('status', 'active')
     .in('category', categories)
-    .neq('category', 'geo')
-    .gte('created_at', new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString())
+    .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
     .order('created_at', { ascending: false })
     .limit(50);
 
@@ -255,6 +255,9 @@ export async function getNextBackgroundTrack(channelId) {
   // Fall back to Music bucket scanning (from constants)
   const { getCurrentEntertainmentMusicUrl } = await import('./constants.js');
   const url = await getCurrentEntertainmentMusicUrl();
-  const name = decodeURIComponent(url.substring(url.lastIndexOf('/') + 1)).replace(/\.[^/.]+$/, '');
+  // Extract filename from URL, handling query parameters and proxy paths
+  const urlPath = url.split('?')[0];
+  const rawName = decodeURIComponent(urlPath.substring(urlPath.lastIndexOf('/') + 1));
+  const name = rawName.replace(/\.[^/.]+$/, '');
   return { id: null, title: name, audio_url: url, duration_seconds: 180 };
 }

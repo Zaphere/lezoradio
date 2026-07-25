@@ -236,7 +236,8 @@ class RadioEngine {
       const channel = stationController.getChannel(channelId);
       const stationName = channel?.name || channel?.station_name || 'Radio Lezo';
 
-      const trackName = next.title || decodeURIComponent((next.audio_url || '').substring((next.audio_url || '').lastIndexOf('/') + 1)).replace(/\.[^/.]+$/, '');
+      const rawUrl = next.audio_url || '';
+      const trackName = next.title || decodeURIComponent(rawUrl.split('?')[0].substring(rawUrl.split('?')[0].lastIndexOf('/') + 1)).replace(/\.[^/.]+$/, '');
       const durationSeconds = next.duration_seconds || 180;
 
       console.log(`[${new Date().toISOString()}] [radioEngine] Background segment for ${channelId}: ${trackName} (${durationSeconds}s)`);
@@ -451,7 +452,7 @@ class RadioEngine {
 
     // Mark events as played
     for (const event of events) {
-      await queueManager.markPlayed(channelId, 'event', event.id);
+      await queueManager.markPlayed(channelId, 'event', event.id, stationId);
       const { data: linkedScripts } = await supabase
         .from('radio_scripts')
         .select('id')
