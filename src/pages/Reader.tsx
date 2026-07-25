@@ -82,7 +82,7 @@ export default function Reader() {
     }
 
     const apiKey = (import.meta.env.VITE_ELEVENLABS_API_KEY as string) || '';
-    const voiceId = voiceIdOverride || (import.meta.env.VITE_ELEVENLABS_VOICE_ID as string) || 'wBXNqKUATyqu0RtYt25i';
+    const voiceId = voiceIdOverride || (import.meta.env.VITE_ELEVENLABS_VOICE_ID as string) || '3IyGWZwOTNraZr1Tz0fI';
 
     setPlayingText(text);
 

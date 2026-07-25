@@ -81,7 +81,7 @@ export function computeEffectivePriority(event) {
 export const VOICE_IDS = {
   KINSHASA_LINGALA: 'uTB2ynnsQgtJDou6IulW',
   SWAHILI_FEMALE: '2tSJpap7gXlgDV2bauu0',
-  FRENCH_ADAM: 'wBXNqKUATyqu0RtYt25i',
+  FRENCH_ADAM: '3IyGWZwOTNraZr1Tz0fI',
 };
 
 export const DEFAULT_STATE = {

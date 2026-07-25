@@ -331,8 +331,8 @@ export function createApp() {
       const voices = [
         { voice_id: 'uTB2ynnsQgtJDou6IulW', language: 'ln', gender: 'male', style: 'formal', is_primary: true, desc: 'Lingala — Kinshasa' },
         { voice_id: '2tSJpap7gXlgDV2bauu0', language: 'sw', gender: 'female', style: 'formal', is_primary: true, desc: 'Swahili Female — Goma / Lubumbashi' },
-        { voice_id: 'wBXNqKUATyqu0RtYt25i', language: 'fr', gender: 'male', style: 'bulletin', is_primary: true, desc: 'Adam French — News bulletins' },
-        { voice_id: 'wBXNqKUATyqu0RtYt25i', language: 'fr', gender: 'male', style: 'alert', is_primary: true, desc: 'Adam French — Alerts' },
+        { voice_id: '3IyGWZwOTNraZr1Tz0fI', language: 'fr', gender: 'male', style: 'bulletin', is_primary: true, desc: 'Adam French — News bulletins' },
+        { voice_id: '3IyGWZwOTNraZr1Tz0fI', language: 'fr', gender: 'male', style: 'alert', is_primary: true, desc: 'Adam French — Alerts' },
       ];
       let voicesInserted = 0;
       for (const v of voices) {

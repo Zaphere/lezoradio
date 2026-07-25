@@ -666,7 +666,7 @@ class RadioEngine {
       // Seed voices per DRC station/region & bulletin requirements:
       // Kinshasa (Lingala): uTB2ynnsQgtJDou6IulW
       // Goma / Lubumbashi (Swahili): 2tSJpap7gXlgDV2bauu0
-      // Bulletins / Alerts (French): wBXNqKUATyqu0RtYt25i
+      // Bulletins / Alerts (French): 3IyGWZwOTNraZr1Tz0fI
       const voices = [
         { voice_id: VOICE_IDS.KINSHASA_LINGALA, language: 'ln', gender: 'male', style: 'formal', is_primary: true },
         { voice_id: VOICE_IDS.SWAHILI_FEMALE, language: 'sw', gender: 'female', style: 'formal', is_primary: true },
