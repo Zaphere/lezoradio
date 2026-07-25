@@ -127,7 +127,9 @@ export class AudioManager {
     const startPlayback = () => {
       layer.state = 'playing';
       this.fadeTo('intro', 1, 500);
-      void audio.play().catch(() => {});
+      void audio.play().catch(err => {
+        console.error(`[AudioManager] Intro play() rejected for URL: ${url}`, `name: ${err.name}`, `message: ${err.message}`);
+      });
       scheduleCue();
     };
 
@@ -199,7 +201,9 @@ export class AudioManager {
       } else if (Number.isFinite(audio.duration) && audio.duration > 0) {
         audio.currentTime = Math.random() * audio.duration;
       }
-      void audio.play().catch(() => {});
+      void audio.play().catch(err => {
+        console.error(`[AudioManager] Background play() rejected for URL: ${url}`, `name: ${err.name}`, `message: ${err.message}`);
+      });
       this.fadeTo('background', TIMING.BACKGROUND_VOLUME, TIMING.BACKGROUND_FADE_IN);
     };
 
@@ -265,6 +269,10 @@ export class AudioManager {
     return layer.state !== 'idle' && !!layer.element;
   }
 
+  getBackgroundVolume(): number {
+    return this.layers.background.volume;
+  }
+
   /* ─── Track Layer ─── */
 
   playTrack(url: string): void {
@@ -300,7 +308,7 @@ export class AudioManager {
       layer.volume = 1;
       this.applyVolume('track');
       void audio.play().catch(err => {
-        console.warn('[AudioManager] Presenter track playback prevented:', err.message);
+        console.error(`[AudioManager] Track play() rejected for URL: ${url}`, `name: ${err.name}`, `message: ${err.message}`);
         handleEnded();
       });
     };
@@ -389,7 +397,9 @@ export class AudioManager {
       const audio = layer.element;
       if (!audio || layer.state !== 'paused') continue;
       layer.state = 'playing';
-      void audio.play().catch(() => undefined);
+      void audio.play().catch(err => {
+        console.error(`[AudioManager] Resume play() rejected for layer "${id}":`, `name: ${err.name}`, `message: ${err.message}`);
+      });
       this.applyVolume(id);
     }
   }

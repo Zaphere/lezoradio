@@ -130,7 +130,11 @@ export function useAudioExecutor({
       // Duck background music — voice plays OVER music
       // Use provided duckVolume or default
       if (mgr.isBackgroundPlaying) {
+        console.log(`[AudioExecutor] duckBackground called — current bg volume: ${mgr.getBackgroundVolume().toFixed(3)}`);
         mgr.duckBackground(TIMING.INTRO_DUCK_DURATION);
+        console.log(`[AudioExecutor] duckBackground returned — bg volume now: ${mgr.getBackgroundVolume().toFixed(3)}`);
+      } else {
+        console.log(`[AudioExecutor] handleTrackAudio — background NOT playing, no ducking needed`);
       }
 
       // Play presenter voice/TTS track immediately
