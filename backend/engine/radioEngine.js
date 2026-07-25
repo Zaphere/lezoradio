@@ -305,6 +305,14 @@ class RadioEngine {
     const stationId = state.stationId || channel.station_id;
     const stationName = channel.name || channel.station_name || 'Radio Lezo';
 
+    // If a music intro just played and the actual track is pending, play it now
+    if (!isInterrupt && this._pendingTrack && this._pendingTrack.channelId === channelId) {
+      const pending = this._pendingTrack;
+      this._pendingTrack = null;
+      await this.writeBackgroundSegment(channelId, pending.track);
+      return;
+    }
+
     const nextContent = await queueManager.getNextContent(channelId, language, 3);
 
     if (!nextContent || nextContent.type === 'music') {

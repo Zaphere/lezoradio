@@ -58,7 +58,7 @@ function normalizeAlert(item, endpoint) {
   const incident = item.incident || {};
   const geoData = extractGeoData(incident.coordinates ? { coordinates: incident.coordinates, city: incident.city } : item);
   
-  const providerEventId = (item.id && String(item.id).trim()) || `${endpoint}-alert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const providerEventId = (item.id && String(item.id).trim()) || `lezotraffic:alert:${(item.message || item.status || 'unknown').substring(0, 80).toLowerCase().replace(/[^a-z0-9]+/g, ':').replace(/:+/g, ':').replace(/^:|:$/g, '')}`;
   const summary = cleanText(item.message, 500);
   const description = cleanText(item.message, 2000);
   
@@ -121,7 +121,7 @@ function resolveCategory(endpoint, item) {
 
 function normalizeIncident(item, endpoint) {
   const geoData = extractGeoData(item);
-  const providerEventId = (item.id && String(item.id).trim()) || `${endpoint}-incident-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const providerEventId = (item.id && String(item.id).trim()) || `lezotraffic:incident:${(item.description || item.summary || item.title || 'unknown').substring(0, 80).toLowerCase().replace(/[^a-z0-9]+/g, ':').replace(/:+/g, ':').replace(/^:|:$/g, '')}`;
   const summary = cleanText(item.description || item.summary, 500);
   const description = cleanText(item.description, 2000);
   
@@ -164,7 +164,7 @@ function normalizeIncident(item, endpoint) {
 
 function normalizeDestination(item, endpoint) {
   const geoData = extractGeoData(item);
-  const providerEventId = `${endpoint}-dest-${item.name || 'unknown'}-${Date.now()}`;
+  const providerEventId = `lezotraffic:dest:${(item.name || 'unknown').toLowerCase().trim()}`;
   
   return {
     provider: 'lezotraffic',
@@ -198,7 +198,7 @@ function normalizeDestination(item, endpoint) {
 
 function normalizeCity(item, endpoint) {
   const cityName = item.name || 'unknown';
-  const providerEventId = `${endpoint}-${cityName}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const providerEventId = `lezotraffic:city:${cityName.toLowerCase().trim()}`;
   
   return {
     provider: 'lezotraffic',
@@ -233,7 +233,7 @@ function normalizeCity(item, endpoint) {
 
 function normalizeProvince(item, endpoint) {
   const provinceName = item.name || 'unknown';
-  const providerEventId = `${endpoint}-${provinceName}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const providerEventId = `lezotraffic:province:${provinceName.toLowerCase().trim()}`;
   
   return {
     provider: 'lezotraffic',
