@@ -213,6 +213,7 @@ export class AudioManager {
     // Fire onBackgroundEnd when a non-looping track finishes
     if (!loop) {
       audio.addEventListener('ended', () => {
+        this.layers.background.state = 'idle';
         if (this.onBackgroundEnd) {
           // Small delay to avoid rapid re-triggering
           setTimeout(() => this.onBackgroundEnd!(), TIMING.PRE_TRACK_GAP_MS);
