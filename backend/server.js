@@ -85,7 +85,7 @@ async function getNewsContent(region, category) {
 
   let newsQuery = serviceSupabase
     .from('news_items')
-    .select('*')
+    .select('id, feed_id, title, description, content, url, region, category, published_at, ingested_at, is_processed')
     .gte('ingested_at', retentionCutoff())
     .in('category', categoriesToQuery)
     .order('ingested_at', { ascending: false })
