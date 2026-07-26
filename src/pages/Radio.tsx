@@ -36,7 +36,6 @@ export default function Radio() {
   const [channelOverride, setChannelOverride] = useState<Channel | null>(null);
   const [loading, setLoading] = useState(true);
   const [drcRegion, setDrcRegion] = useState<DCRegion | null>(null);
-  const _lastVersionRef = useRef<number>(0);
 
   useEffect(() => {
     if (channelSlug) {
@@ -134,12 +133,22 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
 
   const [userStarted, setUserStarted] = useState(false);
   const [skipToLive, setSkipToLive] = useState(false);
+  const latestVersionRef = useRef(0);
   const { nowPlaying, error: nowPlayingError, refetch: refetchNowPlaying } = useNowPlaying({
     channelId,
     enabled: userStarted,
   });
 
+  // Keep the ref in sync with the latest nowPlaying version
+  useEffect(() => {
+    if (nowPlaying?.version) {
+      latestVersionRef.current = nowPlaying.version;
+    }
+  }, [nowPlaying?.version]);
+
   const handleTrackEnd = useCallback(() => {
+    const versionAtEnd = latestVersionRef.current;
+
     let interval: ReturnType<typeof setInterval> | null = null;
     let pollCount = 0;
     const maxAttempts = 10; // 10 * 1.5s = 15 seconds
@@ -148,9 +157,7 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
       pollCount++;
       await refetchNowPlaying();
 
-      // When we get a newer version than the current one, we're done
-      if (nowPlaying?.version && nowPlaying.version > lastVersionRef.current) {
-        lastVersionRef.current = nowPlaying.version;
+      if (latestVersionRef.current > versionAtEnd) {
         if (interval) {
           clearInterval(interval);
           interval = null;
@@ -158,22 +165,16 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
         return;
       }
 
-      // Timeout reached - show reconnecting state
       if (pollCount >= maxAttempts && interval) {
         setSkipToLive(true);
         clearInterval(interval);
         interval = null;
-        console.log('[Radio] timeout - showing reconnecting state');
       }
     };
 
-    if (lastVersionRef.current === 0 && nowPlaying?.version) {
-      lastVersionRef.current = nowPlaying.version;
-    }
-
     poll();
     interval = setInterval(poll, 1500);
-  }, [refetchNowPlaying, nowPlaying]);
+  }, [refetchNowPlaying]);
 
   const audio = useAudioExecutor({ nowPlaying, enabled: userStarted, onTrackEnd: handleTrackEnd });
 
