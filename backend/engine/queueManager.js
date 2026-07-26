@@ -179,10 +179,10 @@ export function getGenreWeights(channelConfig) {
  * @param {Set<string>} [excludeIds] - Event IDs to exclude (in-memory dedup safety net)
  * @returns {Promise<NextSegment>} Next segment info
  */
-export async function getNextContent(channelId, language = 'fr', maxEvents = 3, excludeIds = new Set(), forceEntertainment = false) {
-  // If forced entertainment rotation, skip content entirely
-  if (forceEntertainment) {
-    console.log(`[queueManager] ${channelId}: forced entertainment rotation`);
+export async function getNextContent(channelId, language = 'fr', maxEvents = 3, excludeIds = new Set(), forceMusic = false) {
+  // If forced music rotation, skip content entirely
+  if (forceMusic) {
+    console.log(`[queueManager] ${channelId}: forced music rotation`);
     const nextTrack = await getNextBackgroundTrack(channelId);
     return {
       type: 'music',

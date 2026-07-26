@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import type { StationRecord, BroadcastMode, NewsCategory } from '../lib/types';
 import { getChannel, newsCategoryForChannel, slugify, CHANNELS, getGlobalChannelBySlug } from '../lib/channels';
@@ -36,6 +36,7 @@ export default function Radio() {
   const [channelOverride, setChannelOverride] = useState<Channel | null>(null);
   const [loading, setLoading] = useState(true);
   const [drcRegion, setDrcRegion] = useState<DCRegion | null>(null);
+  const lastVersionRef = useRef<number>(0);
 
   useEffect(() => {
     if (channelSlug) {
@@ -139,9 +140,40 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
   });
 
   const handleTrackEnd = useCallback(() => {
-    // When a segment ends, re-fetch to check for the next one
-    refetchNowPlaying();
-  }, [refetchNowPlaying]);
+    let interval: ReturnType<typeof setInterval> | null = null;
+    let pollCount = 0;
+    const maxAttempts = 10; // 10 * 1.5s = 15 seconds
+
+    const poll = async () => {
+      pollCount++;
+      await refetchNowPlaying();
+
+      // When we get a newer version than the current one, we're done
+      if (nowPlaying?.version && nowPlaying.version > lastVersionRef.current) {
+        lastVersionRef.current = nowPlaying.version;
+        if (interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+        return;
+      }
+
+      // Timeout reached - show reconnecting state
+      if (pollCount >= maxAttempts && interval) {
+        setSkipToLive(true);
+        clearInterval(interval);
+        interval = null;
+        console.log('[Radio] timeout - showing reconnecting state');
+      }
+    };
+
+    if (lastVersionRef.current === 0 && nowPlaying?.version) {
+      lastVersionRef.current = nowPlaying.version;
+    }
+
+    poll();
+    interval = setInterval(poll, 1500);
+  }, [refetchNowPlaying, nowPlaying]);
 
   const audio = useAudioExecutor({ nowPlaying, enabled: userStarted, onTrackEnd: handleTrackEnd });
 
@@ -166,11 +198,13 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
   }, [channelId, refetchNowPlaying]);
 
   const isLive = userStarted && nowPlaying !== null && nowPlaying.segmentType !== 'silence';
-  const isMusicMode = nowPlaying?.segmentType === 'entertainment' && nowPlaying.audioType === 'stream';
+  const isMusicMode = nowPlaying?.segmentType === 'ambient' && nowPlaying.audioType === 'stream';
 
   const displayEmoji = isGlobal ? channelOverride!.emoji
     : drcRegion ? drcRegion.emoji
       : (station.image_url ? undefined : getFlagEmoji(station.country_code));
+
+  
   const displayImage = isGlobal ? undefined : drcRegion ? undefined : station.image_url;
   const displayName = drcRegion ? `${DRC_COUNTRY.name} \u2014 ${drcRegion.name}` : station.name;
   const displaySubtitle = isGlobal ? channelOverride!.description
@@ -227,8 +261,12 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
       audio.resume();
     } else if (audio.isPlaying) {
       audio.pause();
+    } else {
+      // Neither playing nor paused (dead state from bug #1)
+      // Refresh to kickstart playback with current segment
+      refetchNowPlaying();
     }
-  }, [audio.isPlaying, audio.isPaused, audio.pause, audio.resume, audio.resumeAudioContext]);
+  }, [audio.isPaused, audio.isPlaying, audio.pause, audio.resume, audio.resumeAudioContext, refetchNowPlaying]);
 
   const handleSeek = useCallback((time: number) => {
     audio.seek(time);
@@ -345,7 +383,7 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
                 <svg className="w-3.5 h-3.5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z" />
                 </svg>
-                Start Listening
+                Start Stream
               </button>
               {nowPlayingError && (
                 <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-2 text-[10px] text-red-400">

@@ -10,7 +10,7 @@ export const SEGMENT_TYPES = {
   JINGLE: 'jingle',
   BULLETIN: 'bulletin',
   ANNOUNCEMENT: 'announcement',
-  ENTERTAINMENT: 'entertainment',
+  AMBIENT: 'ambient',
   SILENCE: 'silence',
   TRANSITION: 'transition',
 };
@@ -19,7 +19,7 @@ export const AUDIO_TYPES = {
   STREAM: 'stream',
   TTS: 'tts',
   JINGLE: 'jingle',
-  ENTERTAINMENT: 'entertainment',
+  AMBIENT: 'ambient',
 };
 
 export const TRANSITION_TYPES = {

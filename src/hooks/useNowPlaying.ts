@@ -94,9 +94,11 @@ export function useNowPlaying({ channelId, enabled = true }: UseNowPlayingOption
       }
 
       const mapped = mapRow(data);
-      versionRef.current = mapped.version;
-      setNowPlaying(mapped);
-      setError(null);
+      if (mapped.version > versionRef.current) {
+        versionRef.current = mapped.version;
+        setNowPlaying(mapped);
+        setError(null);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to fetch initial state';
       console.warn('[useNowPlaying] Initial fetch exception:', msg);

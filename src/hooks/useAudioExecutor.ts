@@ -32,7 +32,7 @@ interface UseAudioExecutorResult extends AudioExecutorState {
  *  - On new nowPlaying.version → determine transition type → execute
  *  - track/tts/jingle → play on track layer
  *  - intro → play on intro layer
-  *  - entertainment/track with background → start background layer
+ *  - ambient/track with background → start background layer
  *  - silence → stop all
  *
  * Exposes playback state for UI components.
@@ -170,7 +170,7 @@ export function useAudioExecutor({
 
     if (!audioUrl) {
       // No audio URL — ensure background keeps running
-      if (segmentType !== 'entertainment' && segmentType !== 'transition') {
+      if (segmentType !== 'ambient' && segmentType !== 'transition') {
         setState(prev => ({ ...prev, isPlaying: false }));
       }
       return;
@@ -187,8 +187,8 @@ export function useAudioExecutor({
       case 'intro':
         handleIntro(audioUrl);
         break;
-      case 'entertainment':
-        // Entertainment = background music layer, ducked when foreground TTS plays
+      case 'ambient':
+        // Ambient = background music layer, ducked when foreground TTS plays
         handleBackground(audioUrl, durationSeconds);
         break;
       case 'transition':

@@ -24,8 +24,6 @@ import {
   generateMusicOutro,
   generateStationIdText,
   generateTimeAnnouncement,
-  generateWelcomeIntro,
-  generateNoTrafficTransition,
 } from '../providers/scriptGenerator.js';
 
 class RadioEngine {
@@ -38,7 +36,6 @@ class RadioEngine {
     this._pendingTrack = null; // { channelId, track } — track announced via intro, pending playback
     this._recentlyPlayed = new Map(); // channelId -> Map<eventId, timestamp> — in-memory dedup safety net
     this._consecutiveContent = new Map(); // channelId -> count — forces music after 2 consecutive content segments
-    this._welcomeIntroShown = new Set(); // channelIds that already had their welcome intro
   }
 
   /**
@@ -245,7 +242,7 @@ class RadioEngine {
   }
 
   /**
-    * Write a background music segment (entertainment type).
+   * Write a background music segment (ambient type).
    * Plays on the background layer — ducked when foreground TTS plays.
    * After the track finishes, dispatches next content via priority chain.
    * @param {object} [next] - Optional pre-selected track (used after a matching intro was played)
@@ -276,10 +273,10 @@ class RadioEngine {
       const trackName = next.title || decodeURIComponent(rawUrl.split('?')[0].substring(rawUrl.split('?')[0].lastIndexOf('/') + 1)).replace(/\.[^/.]+$/, '');
       const durationSeconds = next.duration_seconds || 180;
 
-       console.log(`[${new Date().toISOString()}] [radioEngine] Background segment for ${channelId}: ${trackName} (${durationSeconds}s)`);
+      console.log(`[${new Date().toISOString()}] [radioEngine] Background segment for ${channelId}: ${trackName} (${durationSeconds}s)`);
 
-       this.updateCurrentSegment(channelId, {
-         segment_type: SEGMENT_TYPES.ENTERTAINMENT,
+      this.updateCurrentSegment(channelId, {
+        segment_type: SEGMENT_TYPES.AMBIENT,
         segment_id: `bg-${Date.now()}`,
         audio_url: next.audio_url,
         audio_type: 'stream',
@@ -342,9 +339,9 @@ class RadioEngine {
         const { getCurrentEntertainmentMusicUrl } = await import('./constants.js');
         const url = await getCurrentEntertainmentMusicUrl();
         const state = this.channels.get(channelId);
-         this.updateCurrentSegment(channelId, {
-           segment_type: SEGMENT_TYPES.ENTERTAINMENT,
-           segment_id: `fallback-${Date.now()}`,
+        this.updateCurrentSegment(channelId, {
+          segment_type: SEGMENT_TYPES.AMBIENT,
+          segment_id: `fallback-${Date.now()}`,
           audio_url: url,
           audio_type: 'stream',
           title: `Radio Lezo — Fallback`,
@@ -380,47 +377,20 @@ class RadioEngine {
       return;
     }
 
-   // Welcome intro — plays once per channel session, then moves to the normal priority chain
-   if (!this._welcomeIntroShown.has(channelId)) {
-     this._welcomeIntroShown.add(channelId);
-     const welcomeText = generateWelcomeIntro(language, stationName);
-     const voice = this.resolveVoice(stationId, channel, 'announcement', language);
-     if (voice.voice) {
-       const ttsResult = await ttsGenerator.getOrGenerate(welcomeText, voice.voice.voice_id, language);
-       if (ttsResult) {
-         const durationSeconds = Math.ceil(welcomeText.length / 15) + 1;
-         this.updateCurrentSegment(channelId, {
-           segment_type: SEGMENT_TYPES.ANNOUNCEMENT,
-           segment_id: `welcome-${Date.now()}`,
-           audio_url: ttsResult.audioUrl,
-           audio_type: 'tts',
-           title: `${stationName} — Welcome`,
-           duration_seconds: durationSeconds,
-           language,
-           voice_id: voice.voice.voice_id,
-           transition_type: 'crossfade',
-           description: welcomeText,
-         });
-         this.scheduleNextContent(channelId, durationSeconds * 1000);
-         return;
-       }
-     }
-   }
-
-   // Build in-memory dedup set for this channel
-   this._pruneRecentlyPlayed();
-   const excludeIds = this._recentlyPlayed.get(channelId)
+    // Build in-memory dedup set for this channel
+    this._pruneRecentlyPlayed();
+    const excludeIds = this._recentlyPlayed.get(channelId)
       ? new Set(this._recentlyPlayed.get(channelId).keys())
       : new Set();
 
-    // Force entertainment rotation after 2 consecutive content segments (prevents queue starvation)
+    // Force music after 2 consecutive content segments (prevents queue starvation)
     const consecCount = this._consecutiveContent.get(channelId) || 0;
-    const forceEntertainment = consecCount >= 2;
-    if (forceEntertainment) {
-      console.log(`[radioEngine] ${channelId}: forcing entertainment after ${consecCount} consecutive content segments`);
+    const forceMusic = consecCount >= 2;
+    if (forceMusic) {
+      console.log(`[radioEngine] ${channelId}: forcing music after ${consecCount} consecutive content segments`);
     }
 
-    const nextContent = await queueManager.getNextContent(channelId, language, 3, excludeIds, forceEntertainment);
+    const nextContent = await queueManager.getNextContent(channelId, language, 3, excludeIds, forceMusic);
 
     if (!nextContent || nextContent.type === 'music') {
       // Reset consecutive content counter
@@ -430,9 +400,9 @@ class RadioEngine {
 
       // Play outro for the track that just finished (if it was a background track)
       const finishedSegment = state.currentSegment;
-       if (finishedSegment?.segment_type === SEGMENT_TYPES.ENTERTAINMENT && finishedSegment.title) {
-         const title = finishedSegment.title;
-         const cleanName = title.includes('—') ? title.split('—')[1].trim() : title.replace(`${stationName} — `, '');
+      if (finishedSegment?.segment_type === SEGMENT_TYPES.AMBIENT && finishedSegment.title) {
+        const title = finishedSegment.title;
+        const cleanName = title.includes('—') ? title.split('—')[1].trim() : title.replace(`${stationName} — `, '');
         const outroText = generateMusicOutro(language, cleanName, stationName);
         const outroVoice = this.resolveVoice(stationId, channel, 'bulletin', language);
         if (outroVoice.voice && outroText) {

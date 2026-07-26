@@ -163,7 +163,7 @@ export interface ITTSProvider {
 
 export type SegmentType =
   | 'intro' | 'track' | 'tts' | 'jingle' | 'bulletin'
-  | 'announcement' | 'entertainment' | 'silence' | 'transition';
+  | 'announcement' | 'ambient' | 'silence' | 'transition';
 
 export type TransitionType = 'crossfade' | 'duck' | 'cut' | 'next';
 
@@ -174,7 +174,7 @@ export interface NowPlaying {
   segmentType: SegmentType;
   segmentId: string | null;
   audioUrl: string | null;
-  audioType: 'stream' | 'tts' | 'jingle' | 'entertainment' | null;
+  audioType: 'stream' | 'tts' | 'jingle' | 'ambient' | null;
   title: string | null;
   artist: string | null;
   album: string | null;
