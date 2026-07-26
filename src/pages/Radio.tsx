@@ -36,7 +36,7 @@ export default function Radio() {
   const [channelOverride, setChannelOverride] = useState<Channel | null>(null);
   const [loading, setLoading] = useState(true);
   const [drcRegion, setDrcRegion] = useState<DCRegion | null>(null);
-  const lastVersionRef = useRef<number>(0);
+  const _lastVersionRef = useRef<number>(0);
 
   useEffect(() => {
     if (channelSlug) {
