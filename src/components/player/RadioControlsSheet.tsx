@@ -28,10 +28,10 @@ export default function RadioControlsSheet({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-4 right-4 z-50 w-10 h-10 rounded-full bg-surface border border-border shadow-lg flex items-center justify-center text-text-primary hover:bg-surface-hover transition-all active:scale-95 touch-manipulation"
+        className="fixed bottom-4 right-4 z-50 w-12 h-12 rounded-full bg-white shadow-[0_8px_24px_rgba(0,0,0,0.15)] hover:shadow-[0_12px_32px_rgba(0,0,0,0.2)] flex items-center justify-center text-[#555555] dark:text-[#94A3B8] hover:text-[#00A651] transition-all active:scale-95 touch-manipulation dark:bg-white/10"
         aria-label="Open radio controls"
       >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
         </svg>
       </button>
@@ -40,38 +40,38 @@ export default function RadioControlsSheet({
         <div className="fixed inset-0 z-[60] flex items-end justify-center">
           <button
             type="button"
-            className="absolute inset-0 bg-black/50"
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             aria-label="Close controls"
             onClick={() => setOpen(false)}
           />
-          <div className="relative w-full max-w-lg bg-bg-primary border-t border-border rounded-t-2xl p-4 pb-6 space-y-3 animate-slide-up">
-            <div className="w-8 h-1 rounded-full bg-border mx-auto mb-1" />
+          <div className="relative w-full max-w-lg bg-white dark:bg-[#1A1A1E] rounded-t-3xl p-5 pb-7 space-y-4 shadow-[0_-8px_32px_rgba(0,0,0,0.12)] animate-slide-up">
+            <div className="w-10 h-1.5 rounded-full bg-[#DDDDDD] dark:bg-white/20 mx-auto mb-2" />
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold text-text-primary">Radio Controls</h3>
+              <h3 className="text-base font-semibold text-[#111111] dark:text-[#F1F5F9]">Radio Controls</h3>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="p-1 rounded-lg text-text-secondary hover:text-text-primary"
+                className="p-1.5 rounded-full text-[#555555] dark:text-[#94A3B8] hover:text-[#00A651] hover:bg-[#00A651]/10 transition-all"
                 aria-label="Close"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
 
-            <div className="flex items-center justify-between py-2 px-3 rounded-xl bg-surface border border-border">
-              <span className="text-[10px] text-text-secondary uppercase tracking-wide">Local time</span>
+            <div className="flex items-center justify-between py-3 px-4 rounded-2xl bg-[#F8F8F8] dark:bg-white/5">
+              <span className="text-sm text-[#555555] dark:text-[#94A3B8] font-medium">Local time</span>
               <StationClock timeInfo={timeInfo} />
             </div>
 
-            <div className="flex items-center justify-between py-2 px-3 rounded-xl bg-surface border border-border">
-              <span className="text-[10px] text-text-secondary uppercase tracking-wide">Theme</span>
+            <div className="flex items-center justify-between py-3 px-4 rounded-2xl bg-[#F8F8F8] dark:bg-white/5">
+              <span className="text-sm text-[#555555] dark:text-[#94A3B8] font-medium">Theme</span>
               <ThemeToggle />
             </div>
 
-            <div className="py-2 px-3 rounded-xl bg-surface border border-border">
-              <span className="text-[10px] text-text-secondary uppercase tracking-wide block mb-2">Volume</span>
+            <div className="py-3 px-4 rounded-2xl bg-[#F8F8F8] dark:bg-white/5">
+              <span className="text-sm text-[#555555] dark:text-[#94A3B8] font-medium block mb-2">Volume</span>
               <VolumeControl volume={volume} onChange={onVolumeChange} />
             </div>
 
@@ -79,15 +79,15 @@ export default function RadioControlsSheet({
               <button
                 type="button"
                 onClick={() => { onGoLive(); setOpen(false); }}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-medium active:scale-[0.98]"
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-full bg-[#D62828] text-white text-sm font-bold shadow-[0_4px_12px_rgba(214,40,40,0.3)] hover:bg-[#E84949] active:scale-[0.98] transition-all"
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
                 Go Live
               </button>
             )}
 
-            <div className="flex items-center justify-center gap-2 text-[10px] text-text-secondary">
-              <span className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-red-500 animate-pulse' : 'bg-text-secondary/40'}`} />
+            <div className="flex items-center justify-center gap-2 text-sm text-[#555555] dark:text-[#94A3B8]">
+              <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-[#D62828] animate-pulse' : 'bg-[#555555]/40'}`} />
               {isLive ? 'Broadcasting live' : 'Stand by'}
             </div>
           </div>

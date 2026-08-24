@@ -15,54 +15,54 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className={`min-h-screen bg-bg-primary flex flex-col ${isRadioPage ? 'radio-screen' : ''}`}>
+    <div className={`min-h-screen bg-bg-primary flex flex-col transition-colors duration-300 ${isRadioPage ? 'radio-screen' : ''}`}>
       <header
-        className={`w-full sticky top-0 z-50 glass transition-shadow duration-200 ${
-          scrolled ? 'shadow-lg shadow-black/10' : ''
+        className={`w-full sticky top-0 z-50 bg-bg-primary/80 backdrop-blur-2xl transition-shadow duration-200 ${
+          scrolled ? 'shadow-[0_4px_20px_rgba(0,0,0,0.06)]' : ''
         }`}
       >
-        <div className="w-full px-3 h-11 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-1.5 shrink-0">
-            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shadow-sm border border-primary/20">
-              <RadioIcon className="w-4 h-4 text-primary" active={true} />
+        <div className="w-full px-4 h-12 flex items-center justify-between">
+          <Link to="/" className="flex items-center gap-2 shrink-0">
+            <div className="w-8 h-8 rounded-full bg-[#F0F0F0] dark:bg-white/10 flex items-center justify-center shadow-sm">
+              <RadioIcon className="w-5 h-5 text-[#00A651]" active={true} />
             </div>
             <div className="flex flex-col">
-              <span className="text-sm font-bold text-text-primary leading-tight">Radiolezo</span>
-              <span className="text-[9px] text-text-secondary tracking-wider leading-none">AI RADIO</span>
+              <span className="text-base font-bold text-[#111111] dark:text-[#F1F5F9] leading-tight">Radiolezo</span>
+              <span className="text-[10px] text-[#555555] dark:text-[#94A3B8] tracking-wider leading-none">AI RADIO</span>
             </div>
           </Link>
-          <nav className="hidden sm:flex items-center gap-1">
+          <nav className="hidden sm:flex items-center gap-2">
             <Link
               to="/"
-              className={`px-2 py-1 rounded-lg text-xs font-medium transition-all duration-200 ${
+              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
                 location.pathname === '/'
-                  ? 'bg-primary/15 text-primary'
-                  : 'text-text-secondary hover:text-text-primary hover:bg-surface'
+                  ? 'bg-[#00A651] text-white shadow-sm'
+                  : 'text-[#555555] dark:text-[#94A3B8] hover:text-[#00A651] hover:bg-[#00A651]/10'
               }`}
             >
               Stations
             </Link>
             <Link
               to="/reader"
-              className={`px-2 py-1 rounded-lg text-xs font-medium transition-all duration-200 ${
+              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
                 location.pathname === '/reader'
-                  ? 'bg-primary/15 text-primary'
-                  : 'text-text-secondary hover:text-text-primary hover:bg-surface'
+                  ? 'bg-[#00A651] text-white shadow-sm'
+                  : 'text-[#555555] dark:text-[#94A3B8] hover:text-[#00A651] hover:bg-[#00A651]/10'
               }`}
             >
               Reader
             </Link>
             <Link
               to="/admin"
-              className={`px-2 py-1 rounded-lg text-xs font-medium transition-all duration-200 ${
+              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
                 location.pathname === '/admin'
-                  ? 'bg-primary/15 text-primary'
-                  : 'text-text-secondary hover:text-text-primary hover:bg-surface'
+                  ? 'bg-[#00A651] text-white shadow-sm'
+                  : 'text-[#555555] dark:text-[#94A3B8] hover:text-[#00A651] hover:bg-[#00A651]/10'
               }`}
             >
               Admin
             </Link>
-            <div className="ml-0.5">
+            <div className="ml-1">
               <ThemeToggle />
             </div>
           </nav>
@@ -73,7 +73,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </header>
       <main className={`flex-1 ${isRadioPage ? 'min-h-0 overflow-hidden' : ''}`}>{children}</main>
       {!isRadioPage && (
-        <footer className="w-full border-t border-border py-2 px-3 text-center text-[10px] text-text-secondary">
+        <footer className="w-full py-3 px-4 text-center text-xs text-[#555555] dark:text-[#94A3B8] bg-[#F8F8F8] dark:bg-white/5">
           Radiolezo — AI traffic & news radio for DRC
         </footer>
       )}

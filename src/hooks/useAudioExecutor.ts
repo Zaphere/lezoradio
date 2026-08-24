@@ -52,6 +52,7 @@ export function useAudioExecutor({
   const managerRef = useRef<AudioManager | null>(null);
   const versionRef = useRef(0);
   const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pausedRef = useRef(false);
   const onTrackEndRef = useRef(onTrackEnd);
   onTrackEndRef.current = onTrackEnd;
 
@@ -88,6 +89,8 @@ export function useAudioExecutor({
 
     mgr.setTrackEndCallback(() => {
       clearProgressTimer();
+      // Don't auto-advance while paused — user controls the session
+      if (pausedRef.current) return;
       // Restore background music volume after TTS/bulletin ends
       mgr.restoreBackground(TIMING.BACKGROUND_FADE_IN);
       setState(prev => ({ ...prev, isPlaying: false, isPaused: false, currentTime: 0 }));
@@ -109,6 +112,8 @@ export function useAudioExecutor({
   useEffect(() => {
     if (!nowPlaying || !enabled) return;
     if (nowPlaying.version <= versionRef.current) return;
+    // Don't auto-play new segments while paused — user controls the session
+    if (pausedRef.current) return;
 
     versionRef.current = nowPlaying.version;
     const mgr = managerRef.current;
@@ -213,11 +218,13 @@ export function useAudioExecutor({
   }, []);
 
   const pause = useCallback(() => {
+    pausedRef.current = true;
     managerRef.current?.pauseAll();
     setState(prev => ({ ...prev, isPlaying: false, isPaused: true }));
   }, []);
 
   const resume = useCallback(() => {
+    pausedRef.current = false;
     managerRef.current?.resumeAll();
     setState(prev => ({ ...prev, isPlaying: true, isPaused: false }));
   }, []);

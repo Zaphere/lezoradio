@@ -43,14 +43,14 @@ export default function AudioVisualizer({ isPlaying, analyser, size = 'medium' }
 
   const sizeClasses = {
     small: 'h-6 gap-0.5',
-    medium: 'h-10 gap-0.5 px-4',
+    medium: 'h-12 gap-0.5 px-4',
     large: 'h-14 gap-1 px-6',
   };
 
   const barWidths = {
     small: 'w-0.5',
-    medium: 'w-1',
-    large: 'w-1.5',
+    medium: 'w-1.5',
+    large: 'w-2',
   };
 
   return (
@@ -61,8 +61,8 @@ export default function AudioVisualizer({ isPlaying, analyser, size = 'medium' }
           ref={(el) => { barsRef.current[idx] = el; }}
           className={`${barWidths[size]} rounded-full transition-[height] duration-75 ease-out ${
             isPlaying
-              ? 'bg-gradient-to-t from-primary/80 via-primary to-primary shadow-sm shadow-primary/30'
-              : 'bg-primary/20'
+              ? 'bg-[#00A651] shadow-[0_2px_8px_rgba(0,166,81,0.2)]'
+              : 'bg-[#00A651]/20'
           }`}
           style={{ height: '8px' }}
         />
@@ -70,4 +70,3 @@ export default function AudioVisualizer({ isPlaying, analyser, size = 'medium' }
     </div>
   );
 }
-

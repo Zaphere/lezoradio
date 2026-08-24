@@ -277,7 +277,7 @@ export function createApp() {
       if (existing) clearTimeout(existing);
       engine.pendingTimers.delete(channelId);
 
-      engine.dispatchNextContent(channelId, true).catch(err => {
+      engine.dispatchNextContent(channelId, false).catch(err => {
         console.error(`[skip] dispatchNextContent failed for ${channelId}:`, err.message);
       });
 

@@ -34,23 +34,21 @@ export default function BroadcastTimeline({
   const atLive = isFollowingLive && currentIndex >= items.length - 1;
 
   return (
-    <div className="card p-4 space-y-3">
+    <div className="bg-white dark:bg-white/5 rounded-3xl shadow-[0_4px_16px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)] p-5 space-y-3">
       <div className="flex items-center justify-between">
-        <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
-          Broadcast Timeline
-        </h4>
+        <h4 className="text-sm font-semibold text-[#555555] dark:text-[#94A3B8]">Broadcast Timeline</h4>
         {!atLive && (
           <button
             onClick={onGoLive}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/20 text-red-400 text-[10px] font-bold hover:bg-red-500/30 transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#D62828]/15 text-[#D62828] text-xs font-bold hover:bg-[#D62828]/25 transition-colors cursor-pointer"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#D62828] animate-pulse" />
             Go Live
           </button>
         )}
         {atLive && (
-          <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/20 text-red-400 text-[10px] font-bold">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+          <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#D62828]/15 text-[#D62828] text-xs font-bold">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#D62828] animate-pulse" />
             LIVE
           </span>
         )}
@@ -67,18 +65,18 @@ export default function BroadcastTimeline({
             <button
               key={item.id}
               onClick={() => onSelectIndex(index)}
-              className={`snap-center shrink-0 w-44 p-3 rounded-xl text-left transition-all cursor-pointer border ${
+              className={`snap-center shrink-0 w-44 p-3 rounded-2xl text-left transition-all cursor-pointer ${
                 isActive
-                  ? 'bg-primary/20 border-primary/50 ring-1 ring-primary/30'
+                  ? 'bg-[#00A651]/15 shadow-[0_2px_8px_rgba(0,166,81,0.15)]'
                   : isPast
-                    ? 'bg-surface-subtle border-border/30 opacity-60'
-                    : 'bg-surface border-border/50 hover:bg-surface-hover'
+                    ? 'bg-[#F8F8F8]/50 dark:bg-white/5 opacity-60'
+                    : 'bg-[#F8F8F8] dark:bg-white/10 hover:bg-[#F0F0F0] dark:hover:bg-white/15'
               }`}
             >
-              <p className="text-[10px] text-text-secondary capitalize mb-1">
-                {item.category} · {item.region}
+              <p className="text-xs text-[#555555] dark:text-[#94A3B8] capitalize mb-1">
+                {item.category} \u00B7 {item.region}
               </p>
-              <p className="text-xs text-text-primary font-medium line-clamp-3 leading-snug">
+              <p className="text-sm text-[#111111] dark:text-[#F1F5F9] font-medium line-clamp-3 leading-snug">
                 {item.title}
               </p>
             </button>
@@ -88,20 +86,20 @@ export default function BroadcastTimeline({
         <button
           ref={liveRef}
           onClick={onGoLive}
-          className={`snap-center shrink-0 w-20 flex flex-col items-center justify-center rounded-xl border transition-all cursor-pointer ${
+          className={`snap-center shrink-0 w-20 flex flex-col items-center justify-center rounded-2xl transition-all cursor-pointer ${
             atLive
-              ? 'bg-red-500/20 border-red-500/50'
-              : 'bg-surface border-border/50 hover:bg-red-500/10 hover:border-red-500/30'
+              ? 'bg-[#D62828]/15'
+              : 'bg-[#F8F8F8] dark:bg-white/10 hover:bg-[#D62828]/10'
           }`}
         >
-          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse mb-1" />
-          <span className="text-[10px] font-bold text-red-400">LIVE</span>
+          <span className="w-2 h-2 rounded-full bg-[#D62828] animate-pulse mb-1" />
+          <span className="text-xs font-bold text-[#D62828]">LIVE</span>
         </button>
       </div>
 
-      <p className="text-[10px] text-text-secondary text-center">
+      <p className="text-xs text-[#555555] dark:text-[#94A3B8] text-center">
         {currentIndex >= 0
-          ? `Story ${currentIndex + 1} of ${items.length}${!isFollowingLive ? ' · behind live' : ''}`
+          ? `Story ${currentIndex + 1} of ${items.length}${!isFollowingLive ? ' \u00B7 behind live' : ''}`
           : `${items.length} stories ready`}
       </p>
     </div>

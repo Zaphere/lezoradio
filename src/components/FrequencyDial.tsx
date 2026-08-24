@@ -173,10 +173,10 @@ export default function FrequencyDial({ frequency, isActive, tunerSoundEnabled =
           <path
             d={describeArc(80, 80, 74, -150 + ratio * 300 - 15, -150 + ratio * 300 + 15)}
             fill="none"
-            stroke="var(--color-primary)"
+            stroke={isActive ? 'var(--color-primary)' : '#CCCCCC'}
             strokeWidth="3"
             strokeLinecap="round"
-            opacity={isActive ? 0.8 : 0.12}
+            opacity={isActive ? 0.8 : 0.2}
             className="transition-all duration-300 ease-out"
           />
         </svg>
@@ -195,19 +195,23 @@ export default function FrequencyDial({ frequency, isActive, tunerSoundEnabled =
               <line
                 key={i}
                 x1={x1} y1={y1} x2={x2} y2={y2}
-                className={isActive ? 'stroke-primary' : 'stroke-border'}
-                strokeWidth={i % 4 === 0 ? 2 : 1}
-                opacity={i % 4 === 0 ? 0.8 : 0.35}
-                style={{ transition: 'stroke 0.3s' }}
+                stroke={isActive ? 'var(--color-primary)' : '#AAAAAA'}
+                strokeWidth={i % 4 === 0 ? 2.5 : 1.5}
+                opacity={i % 4 === 0 ? (isActive ? 0.9 : 0.5) : (isActive ? 0.5 : 0.25)}
+                style={{ transition: 'stroke 0.3s, opacity 0.3s' }}
               />
             );
           })}
         </svg>
 
-        {/* Knob body */}
+        {/* Knob body — premium metallic/plastic finish */}
         <div
           className={`absolute rounded-full cursor-grab active:cursor-grabbing ${
-            isDragging ? 'shadow-xl shadow-black/30' : hover ? 'shadow-lg shadow-black/25' : 'shadow-md shadow-black/20'
+            isDragging
+              ? 'shadow-[0_16px_48px_rgba(0,0,0,0.25)]'
+              : hover
+                ? 'shadow-[0_12px_32px_rgba(0,0,0,0.18)]'
+                : 'shadow-[0_8px_24px_rgba(0,0,0,0.12)]'
           }`}
           style={{
             width: 100,
@@ -215,13 +219,15 @@ export default function FrequencyDial({ frequency, isActive, tunerSoundEnabled =
             left: 30,
             top: 30,
             background: isActive
-              ? 'color-mix(in srgb, var(--color-primary) 12%, transparent)'
-              : 'var(--color-surface)',
-            border: `2px solid ${isActive ? 'var(--color-primary)' : 'var(--color-border)'}`,
+              ? 'radial-gradient(circle at 35% 30%, #f5f5f5, #e0e0e0 50%, #b0b0b0)'
+              : 'radial-gradient(circle at 35% 30%, #fafafa, #e8e8e8 50%, #c0c0c0)',
             transform: `rotate(${angle}deg)`,
             transition: snapping
               ? 'transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease'
               : 'box-shadow 0.2s ease',
+            boxShadow: isActive
+              ? 'inset 0 -2px 6px rgba(0,0,0,0.08), inset 0 2px 4px rgba(255,255,255,0.5), 0 8px 24px rgba(0,0,0,0.12)'
+              : 'inset 0 -2px 6px rgba(0,0,0,0.06), inset 0 2px 4px rgba(255,255,255,0.4), 0 8px 24px rgba(0,0,0,0.10)',
           }}
           onMouseDown={onMouseDown}
           onTouchStart={(e) => {
@@ -236,18 +242,23 @@ export default function FrequencyDial({ frequency, isActive, tunerSoundEnabled =
               height: '42%',
               background: isActive
                 ? 'linear-gradient(to bottom, var(--color-primary), transparent)'
-                : 'linear-gradient(to bottom, var(--color-text-secondary), transparent)',
+                : 'linear-gradient(to bottom, #888888, transparent)',
               transform: 'translateX(-50%)',
               transition: 'background 0.3s',
             }}
           />
           {/* Center dot */}
           <div
-            className="absolute w-3 h-3 rounded-full top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+            className="absolute w-4 h-4 rounded-full top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
             style={{
-              background: isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-              opacity: isActive ? 1 : 0.3,
-              transition: 'background 0.3s',
+              background: isActive
+                ? 'radial-gradient(circle at 40% 35%, #00C45E, var(--color-primary))'
+                : 'radial-gradient(circle at 40% 35%, #aaaaaa, #777777)',
+              boxShadow: isActive
+                ? '0 0 8px rgba(0,166,81,0.4), inset 0 1px 2px rgba(255,255,255,0.3)'
+                : 'inset 0 1px 2px rgba(255,255,255,0.3)',
+              opacity: isActive ? 1 : 0.5,
+              transition: 'background 0.3s, opacity 0.3s',
             }}
           />
         </div>
@@ -258,26 +269,26 @@ export default function FrequencyDial({ frequency, isActive, tunerSoundEnabled =
           style={{ zIndex: 10 }}
         >
           <div
-            className={`text-3xl font-bold font-mono tracking-tight transition-colors ${
-              isActive ? 'text-primary' : 'text-text-secondary'
+            className={`text-[36px] font-bold font-mono tracking-tight transition-colors ${
+              isActive ? 'text-[#111111] dark:text-[#F1F5F9]' : 'text-[#555555] dark:text-[#94A3B8]'
             }`}
           >
             {displayFreq}
           </div>
-          <div className="text-xs text-text-secondary mt-0.5 font-medium">FM</div>
+          <div className="text-sm text-[#555555] dark:text-[#94A3B8] font-medium tracking-wider">FM</div>
         </div>
       </div>
 
-      {/* Channel name below dial — clean text only, no emoji here */}
-      <div className="mt-4 text-center min-h-[2rem]">
+      {/* Channel name below dial */}
+      <div className="mt-4 text-center min-h-[2.5rem]">
         {channel ? (
-          <div className={`text-sm font-semibold transition-colors ${
-            isActive ? 'text-text-primary' : 'text-text-secondary'
+          <div className={`text-base font-semibold transition-colors ${
+            isActive ? 'text-[#111111] dark:text-[#F1F5F9]' : 'text-[#555555] dark:text-[#94A3B8]'
           }`}>
             {channel.name}
           </div>
         ) : (
-          <div className="text-xs text-text-secondary">
+          <div className="text-sm text-[#555555] dark:text-[#94A3B8]">
             {isDragging ? 'Tuning...' : '--'}
           </div>
         )}

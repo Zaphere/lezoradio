@@ -82,8 +82,8 @@ export async function scheduleBulletins() {
  */
 export function scheduleStationIds(channels, engineConfig) {
   for (const channel of channels) {
-    const minMs = engineConfig?.station_id_interval_min_ms || 1200000;
-    const maxMs = engineConfig?.station_id_interval_max_ms || 1800000;
+    const minMs = engineConfig?.station_id_interval_min_ms || 300000;  // 5 min
+    const maxMs = engineConfig?.station_id_interval_max_ms || 600000;  // 10 min
     const intervalMs = minMs + Math.random() * (maxMs - minMs);
 
     const taskId = `station_id:${channel.channel_id}`;

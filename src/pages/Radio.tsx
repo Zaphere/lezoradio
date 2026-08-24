@@ -24,8 +24,6 @@ import BroadcastModeIndicator from '../components/player/BroadcastModeIndicator'
 import AudioPlayerBar from '../components/player/AudioPlayerBar';
 import NewsFeedPreview from '../components/NewsFeedPreview';
 
-// Shared soft-interaction classes — used on every tappable control so
-// buttons feel consistent across mobile / tablet / desktop.
 const SOFT_BTN =
   'rf-press touch-manipulation select-none';
 
@@ -104,8 +102,8 @@ export default function Radio() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-bg-primary transition-colors duration-300">
+        <div className="w-6 h-6 border-2 border-[#00A651] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -123,8 +121,6 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
 
   const channel = getChannel(currentFreq) ?? CHANNELS[0];
 
-  // Channel ID for the backend engine — maps to backend channel_id format
-  // Backend channels: 'kinshasa-main', 'goma-main', 'lubumbashi-main', 'global-main'
   const channelId = useMemo(() => {
     if (channelOverride) return 'global-main';
     if (drcRegion) return `${drcRegion.slug}-main`;
@@ -139,7 +135,6 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
     enabled: userStarted,
   });
 
-  // Keep the ref in sync with the latest nowPlaying version
   useEffect(() => {
     if (nowPlaying?.version) {
       latestVersionRef.current = nowPlaying.version;
@@ -151,7 +146,7 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
 
     let interval: ReturnType<typeof setInterval> | null = null;
     let pollCount = 0;
-    const maxAttempts = 10; // 10 * 1.5s = 15 seconds
+    const maxAttempts = 10;
 
     const poll = async () => {
       pollCount++;
@@ -178,13 +173,11 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
 
   const audio = useAudioExecutor({ nowPlaying, enabled: userStarted, onTrackEnd: handleTrackEnd });
 
-  // "Go Live" — skip to the latest segment
   const handleGoLive = useCallback(() => {
     setSkipToLive(true);
     refetchNowPlaying();
   }, [refetchNowPlaying]);
 
-  // "Next" — skip to latest available segment
   const handleNext = useCallback(async () => {
     try {
       await fetch('/api/radio/skip', {
@@ -213,7 +206,7 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
       : station.region;
   const displayIcon = displayImage
     ? <img src={displayImage} alt={displayName} className="w-12 h-12 rounded-full object-cover" />
-    : <span className="text-3xl">{displayEmoji}</span>;
+    : <span className="text-4xl">{displayEmoji}</span>;
 
   const theme = useMemo(
     () => getCountryTheme(station.country_code, displayName, drcRegion?.slug ?? null),
@@ -263,8 +256,6 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
     } else if (audio.isPlaying) {
       audio.pause();
     } else {
-      // Neither playing nor paused (dead state from bug #1)
-      // Refresh to kickstart playback with current segment
       refetchNowPlaying();
     }
   }, [audio.isPaused, audio.isPlaying, audio.pause, audio.resume, audio.resumeAudioContext, refetchNowPlaying]);
@@ -293,7 +284,7 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
   }, [isLive, nowPlaying?.nextTitle]);
 
   return (
-    <div className="flex flex-col h-full min-h-0 select-none pb-4" style={themeVars}>
+    <div className="flex flex-col h-full min-h-0 select-none pb-4 bg-bg-primary transition-colors duration-300" style={themeVars}>
       <style>{`
         @keyframes rf-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes rf-pulse-ring { 0%, 100% { box-shadow: 0 0 0 0 var(--c-glow); } 50% { box-shadow: 0 0 0 8px transparent; } }
@@ -310,19 +301,16 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
         }
       `}</style>
 
-      <div
-        className="sticky top-0 z-40 glass border-b transition-colors duration-500 shrink-0"
-        style={{ borderColor: `color-mix(in srgb, var(--c-primary) 25%, transparent)` }}
-      >
-        <div className="w-full px-4 py-2.5 flex items-center justify-between">
+      <div className="sticky top-0 z-40 bg-bg-primary/80 backdrop-blur-2xl shadow-[0_2px_12px_rgba(0,0,0,0.04)] shrink-0 transition-colors duration-300">
+        <div className="w-full px-4 py-3 flex items-center justify-between">
           <button
             onClick={() => navigate('/')}
-            className={`${SOFT_BTN} flex items-center gap-1.5 text-text-secondary hover:text-text-primary min-h-9 -ml-1 pl-1 pr-2 rounded-lg`}
+            className={`${SOFT_BTN} flex items-center gap-1.5 text-[#555555] dark:text-[#94A3B8] hover:text-[#00A651] min-h-10 -ml-1 pl-1 pr-3 rounded-full`}
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            <span className="text-xs font-semibold">{isGlobal ? 'All Channels' : (isDrcBroadcast ? DRC_COUNTRY.name : 'All Countries')}</span>
+            <span className="text-sm font-semibold">{isGlobal ? 'All Channels' : (isDrcBroadcast ? DRC_COUNTRY.name : 'All Countries')}</span>
           </button>
 
           <div className="flex items-center gap-2">
@@ -333,30 +321,29 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto radio-scrollable-content max-w-lg mx-auto w-full px-3 py-3 space-y-3">
-        <div className="space-y-3">
-          <div className="text-center space-y-1 rf-fade-up">
+      <div className="flex-1 min-h-0 overflow-y-auto radio-scrollable-content max-w-lg mx-auto w-full px-4 py-4 space-y-4">
+        <div className="space-y-4">
+          <div className="text-center space-y-1.5 rf-fade-up">
             <div
-              className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-surface border transition-shadow duration-500 shadow-sm"
+              className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-white shadow-[0_4px_16px_rgba(0,0,0,0.08)] transition-shadow duration-500"
               style={{
-                borderColor: `color-mix(in srgb, var(--c-primary) 45%, transparent)`,
-                boxShadow: isLive ? `0 0 15px -4px var(--c-glow)` : 'none',
+                boxShadow: isLive ? `0 0 20px -4px var(--c-glow)` : '0 4px 16px rgba(0,0,0,0.08)',
               }}
             >
               {displayIcon}
             </div>
-            <h1 className="text-lg font-bold text-text-primary tracking-tight">{displayName}</h1>
+            <h1 className="text-[22px] font-bold text-[#111111] dark:text-[#F1F5F9] tracking-tight">{displayName}</h1>
             {displaySubtitle && (
-              <p className="text-[10px] text-text-secondary leading-none">{displaySubtitle}</p>
+              <p className="text-sm text-[#555555] dark:text-[#94A3B8] leading-none">{displaySubtitle}</p>
             )}
-            <div className="flex items-center justify-center gap-1.5 mt-0.5">
+            <div className="flex items-center justify-center gap-1.5 mt-1">
               <BroadcastModeIndicator mode={mode} bulletinHour={null} />
             </div>
           </div>
 
           <div className="flex justify-center relative">
             <div
-              className="absolute inset-0 m-auto w-28 h-28 rounded-full blur-xl opacity-35 pointer-events-none transition-opacity duration-700"
+              className="absolute inset-0 m-auto w-32 h-32 rounded-full blur-xl opacity-35 pointer-events-none transition-opacity duration-700"
               style={{ background: theme.gradient, opacity: isLive ? 0.35 : 0.12 }}
             />
             <div className="relative touch-none" style={{ touchAction: 'none' }}>
@@ -368,26 +355,26 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
             </div>
           </div>
 
-          <div className="flex justify-center py-0.5">
+          <div className="flex justify-center py-1">
             <AudioVisualizer isPlaying={audio.isPlaying} analyser={audio.getAnalyser()} size="medium" />
           </div>
 
           {!userStarted && (
-            <div className="flex flex-col items-center gap-1.5 py-1">
+            <div className="flex flex-col items-center gap-2 py-2">
               <button
                 onClick={() => {
                   setUserStarted(true);
                   audio.resumeAudioContext();
                 }}
-                className={`${SOFT_BTN} inline-flex items-center gap-1.5 px-5 py-2 rounded-full text-white text-[11px] font-bold shadow-md bg-red-600 hover:bg-red-500 shadow-red-600/30 active:scale-95 transition-all cursor-pointer`}
+                className={`${SOFT_BTN} inline-flex items-center gap-1.5 px-6 py-2.5 rounded-full text-white text-base font-bold bg-[#00A651] hover:bg-[#00C45E] shadow-[0_4px_16px_rgba(0,166,81,0.35)] active:scale-95 transition-all cursor-pointer`}
               >
-                <svg className="w-3.5 h-3.5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z" />
                 </svg>
                 Start Stream
               </button>
               {nowPlayingError && (
-                <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-2 text-[10px] text-red-400">
+                <div className="rounded-full bg-[#D62828]/10 px-4 py-1.5 text-sm text-[#D62828]">
                   Connection error: {nowPlayingError}
                 </div>
               )}
@@ -395,7 +382,7 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
           )}
 
           {userStarted && (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <AudioPlayerBar
                 title={nowPlaying?.title ?? 'Radio Lezo — Background'}
                 subtitle={nowPlaying?.artist ?? undefined}
@@ -422,7 +409,7 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
           />
 
           {nextSegmentLabel && (
-            <div className="text-center text-xs text-text-secondary">
+            <div className="text-center text-sm text-[#555555] dark:text-[#94A3B8]">
               {nextSegmentLabel}
             </div>
           )}

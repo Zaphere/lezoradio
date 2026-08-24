@@ -71,23 +71,23 @@ export default function AudioPlayerBar({
   const progress = duration > 0 ? Math.min(1, displayTime / duration) : 0;
 
   return (
-    <div className="w-full bg-surface border border-border rounded-xl px-3 py-2.5 shadow-sm">
-      <div className="flex items-center gap-2 mb-1.5">
+    <div className="w-full bg-white dark:bg-white/5 rounded-3xl shadow-[0_4px_16px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)] px-4 py-3">
+      <div className="flex items-center gap-3 mb-2">
         <div className="flex items-center gap-1">
           <button
             onClick={onPrev}
             disabled={!hasPrev}
-            className="p-1 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-all disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer"
+            className="p-2 rounded-full text-[#555555] dark:text-[#94A3B8] hover:text-[#00A651] hover:bg-[#00A651]/10 transition-all disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer"
             aria-label="Previous story"
           >
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
             </svg>
           </button>
 
           <button
             onClick={onPlayPause}
-            className="p-1.5 rounded-lg text-text-primary hover:bg-surface-hover transition-all cursor-pointer"
+            className="p-2.5 rounded-full bg-[#00A651] text-white hover:bg-[#00C45E] shadow-[0_4px_12px_rgba(0,166,81,0.3)] transition-all cursor-pointer active:scale-95"
             aria-label={isPlaying && !isPaused ? 'Pause' : 'Play'}
           >
             {isPlaying && !isPaused ? (
@@ -95,7 +95,7 @@ export default function AudioPlayerBar({
                 <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
               </svg>
             ) : (
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M8 5v14l11-7z" />
               </svg>
             )}
@@ -104,21 +104,21 @@ export default function AudioPlayerBar({
           <button
             onClick={onNext}
             disabled={!hasNext}
-            className="p-1 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-all disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer"
+            className="p-2 rounded-full text-[#555555] dark:text-[#94A3B8] hover:text-[#00A651] hover:bg-[#00A651]/10 transition-all disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer"
             aria-label="Next story"
           >
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
             </svg>
           </button>
         </div>
 
         <div className="flex-1 min-w-0 ml-1">
-          <p className="text-xs font-medium text-text-primary truncate leading-tight">
+          <p className="text-sm font-medium text-[#111111] dark:text-[#F1F5F9] truncate leading-tight">
             {title || 'No story playing'}
           </p>
           {subtitle && (
-            <p className="text-[10px] text-text-secondary truncate leading-tight">
+            <p className="text-xs text-[#555555] dark:text-[#94A3B8] truncate leading-tight">
               {subtitle}
             </p>
           )}
@@ -127,7 +127,7 @@ export default function AudioPlayerBar({
 
       <div
         ref={barRef}
-        className="relative h-1.5 rounded-full bg-surface-hover cursor-pointer group touch-none"
+        className="relative h-2 rounded-full bg-[#F0F0F0] dark:bg-white/10 cursor-pointer group touch-none"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -135,20 +135,20 @@ export default function AudioPlayerBar({
         style={{ touchAction: 'none' }}
       >
         <div
-          className="absolute inset-y-0 left-0 rounded-full bg-primary transition-[width] duration-75"
+          className="absolute inset-y-0 left-0 rounded-full bg-[#00A651] transition-[width] duration-75"
           style={{ width: `${progress * 100}%` }}
         />
         <div
-          className={`absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-primary border-2 border-surface shadow-sm transition-opacity ${
+          className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-[#00A651] shadow-[0_2px_8px_rgba(0,166,81,0.4)] transition-opacity ${
             dragging ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
           }`}
-          style={{ left: `calc(${progress * 100}% - 6px)` }}
+          style={{ left: `calc(${progress * 100}% - 8px)` }}
         />
       </div>
 
-      <div className="flex justify-between mt-1">
-        <span className="text-[10px] text-text-secondary tabular-nums">{formatTime(displayTime)}</span>
-        <span className="text-[10px] text-text-secondary tabular-nums">{formatTime(duration)}</span>
+      <div className="flex justify-between mt-1.5">
+        <span className="text-xs text-[#555555] dark:text-[#94A3B8] tabular-nums">{formatTime(displayTime)}</span>
+        <span className="text-xs text-[#555555] dark:text-[#94A3B8] tabular-nums">{formatTime(duration)}</span>
       </div>
     </div>
   );

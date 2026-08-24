@@ -24,6 +24,7 @@ import {
   generateMusicOutro,
   generateStationIdText,
   generateTimeAnnouncement,
+  generateWelcomeText,
 } from '../providers/scriptGenerator.js';
 
 class RadioEngine {
@@ -126,11 +127,16 @@ class RadioEngine {
       )
     ));
 
-    // Dispatch first content via priority chain for each channel
+    // Play welcome intro on top of background for each channel
+    // Welcome segment schedules dispatchNextContent after it finishes
     for (const ch of channels) {
       setImmediate(() => {
-        this.dispatchNextContent(ch.channel_id).catch(err => {
-          console.error(`[${new Date().toISOString()}] [radioEngine] Initial dispatch failed for ${ch.channel_id}:`, err.message);
+        this.writeWelcomeSegment(ch.channel_id).catch(err => {
+          console.error(`[${new Date().toISOString()}] [radioEngine] Welcome segment failed for ${ch.channel_id}:`, err.message);
+          // Fallback: dispatch content directly if welcome fails
+          this.dispatchNextContent(ch.channel_id).catch(fallbackErr => {
+            console.error(`[${new Date().toISOString()}] [radioEngine] Initial dispatch failed for ${ch.channel_id}:`, fallbackErr.message);
+          });
         });
       });
     }
@@ -168,12 +174,50 @@ class RadioEngine {
   }
 
   /**
+   * Fetch a template from the content_templates table.
+   * @param {string} templateType - Template type (e.g. 'transition', 'station_id')
+   * @param {string} language - Channel language
+   * @param {string|null} channelId - Channel ID (for channel-scoped templates)
+   * @returns {Promise<string|null>} Template text with {placeholders}, or null
+   */
+  async getTemplateText(templateType, language, channelId = null) {
+    try {
+      let query = supabase
+        .from('content_templates')
+        .select('text_content')
+        .eq('template_type', templateType)
+        .eq('language', language)
+        .eq('is_active', true)
+        .order('usage_count', { ascending: true })
+        .limit(1);
+
+      if (channelId) {
+        query = query.or(`channel_id.is.null,channel_id.eq.${channelId}`);
+      } else {
+        query = query.is('channel_id', null);
+      }
+
+      const { data, error } = await query.maybeSingle();
+
+      if (error) {
+        console.warn(`[radioEngine] getTemplateText query error:`, error.message);
+        return null;
+      }
+
+      return data?.text_content || null;
+    } catch (err) {
+      console.warn(`[radioEngine] getTemplateText failed:`, err.message);
+      return null;
+    }
+  }
+
+  /**
    * Get engine config from DB (or defaults).
    */
   getEngineConfig() {
     return {
-      station_id_interval_min_ms: 1200000,
-      station_id_interval_max_ms: 1800000,
+      station_id_interval_min_ms: 300000,   // 5 minutes
+      station_id_interval_max_ms: 600000,   // 10 minutes
       time_announcement_interval_min_ms: 1800000,
       time_announcement_interval_max_ms: 1800000,
       silence_threshold_ms: 3500,
@@ -296,6 +340,65 @@ class RadioEngine {
   }
 
   /**
+   * Write a welcome intro segment that plays ON TOP of background music.
+   * Called once when a listener starts the stream. Ducks background during the
+   * welcome TTS, then restores background and dispatches first content.
+   * @param {string} channelId
+   */
+  async writeWelcomeSegment(channelId) {
+    try {
+      const state = this.channels.get(channelId);
+      const channel = stationController.getChannel(channelId);
+      if (!state || !channel) return;
+
+      const language = channel.language || state.language || 'fr';
+      const stationId = state.stationId || channel.station_id;
+      const stationName = channel.name || channel.station_name || 'Radio Lezo';
+
+      const welcomeText = generateWelcomeText(language, stationName);
+      const voice = this.resolveVoice(stationId, channel, 'announcement', language);
+
+      if (!voice.voice) {
+        console.warn(`[radioEngine] No voice for welcome on ${channelId} — skipping welcome`);
+        this.dispatchNextContent(channelId);
+        return;
+      }
+
+      console.log(`[${new Date().toISOString()}] [radioEngine] Welcome segment for ${channelId}: "${welcomeText}"`);
+
+      const ttsResult = await ttsGenerator.getOrGenerate(welcomeText, voice.voice.voice_id, voice.language);
+      if (!ttsResult) {
+        console.warn(`[radioEngine] TTS failed for welcome on ${channelId} — dispatching content`);
+        this.dispatchNextContent(channelId);
+        return;
+      }
+
+      const durationSeconds = Math.ceil(welcomeText.length / 15) + 2;
+
+      this.updateCurrentSegment(channelId, {
+        segment_type: SEGMENT_TYPES.ANNOUNCEMENT,
+        segment_id: `welcome-${Date.now()}`,
+        audio_url: ttsResult.audioUrl,
+        audio_type: 'tts',
+        title: `${stationName} — Welcome`,
+        duration_seconds: durationSeconds,
+        language: voice.language,
+        voice_id: voice.voice.voice_id,
+        transition_type: 'duck',
+        duck_volume: 0.06,
+        description: welcomeText,
+      });
+
+      // After welcome ends, start content priority chain
+      this.scheduleNextContent(channelId, durationSeconds * 1000);
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] [radioEngine] writeWelcomeSegment failed for ${channelId}:`, err.message);
+      // Fallback: skip welcome, start content directly
+      this.dispatchNextContent(channelId);
+    }
+  }
+
+  /**
    * Schedule the next content dispatch after a delay.
    * Cancels any existing pending timer for the same channel.
    * The resulting dispatch is NOT marked as an interrupt (natural end-of-segment).
@@ -384,8 +487,9 @@ class RadioEngine {
       : new Set();
 
     // Force music after 2 consecutive content segments (prevents queue starvation)
+    // Only on natural auto-advance — user-initiated skip bypasses this
     const consecCount = this._consecutiveContent.get(channelId) || 0;
-    const forceMusic = consecCount >= 2;
+    const forceMusic = !isInterrupt && consecCount >= 2;
     if (forceMusic) {
       console.log(`[radioEngine] ${channelId}: forcing music after ${consecCount} consecutive content segments`);
     }
@@ -580,7 +684,9 @@ class RadioEngine {
   }
 
   /**
-   * Trigger a station ID jingle — uses scriptGenerator, not hardcoded text.
+   * Trigger a station ID jingle — plays OVER background music (ducking it).
+   * Does NOT replace background or schedule next content — the background
+   * track's original timer continues running.
    */
   async triggerStationId(data) {
     const { channelId, stationId, stationName } = data;
@@ -590,7 +696,17 @@ class RadioEngine {
     const language = channel?.language || this.channels.get(channelId)?.language || 'fr';
     const voice = languageController.resolveVoice(stationId, language, 'station_id');
 
-    const stationIdText = generateStationIdText(language, stationName || 'Radio Lezo');
+    // Prefer DB template, fall back to scriptGenerator
+    let stationIdText = await this.getTemplateText('station_id', language, channelId);
+    if (stationIdText) {
+      // Fill placeholders
+      stationIdText = stationIdText
+        .replace(/\{station\}/g, stationName || 'Radio Lezo')
+        .replace(/\{time\}/g, new Date().toLocaleTimeString())
+        .replace(/\{date\}/g, new Date().toLocaleDateString());
+    } else {
+      stationIdText = generateStationIdText(language, stationName || 'Radio Lezo');
+    }
 
     if (voice) {
       const ttsResult = await ttsGenerator.getOrGenerate(stationIdText, voice.voice_id, language);
@@ -605,12 +721,12 @@ class RadioEngine {
           duration_seconds: durationSeconds,
           language,
           voice_id: voice.voice_id,
+          transition_type: 'duck',
+          duck_volume: 0.06,
         });
-        
-        // Resume background music after station ID finishes
-        setTimeout(() => {
-          this.writeBackgroundSegment(channelId);
-        }, durationSeconds * 1000);
+        // Background continues — no writeBackgroundSegment or scheduleNextContent.
+        // The background track's original timer is still running and will
+        // dispatch the next content when it finishes.
       }
     }
   }

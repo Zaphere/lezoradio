@@ -334,6 +334,22 @@ export function generateStationIdText(language = 'fr', stationName = 'Radio Lezo
 }
 
 /**
+ * Generate a welcome intro text for when a listener starts the stream.
+ * @param {string} language - Channel language
+ * @param {string} stationName - Station name
+ * @returns {string} Welcome text
+ */
+export function generateWelcomeText(language = 'fr', stationName = 'Radio Lezo') {
+  const texts = {
+    fr: `Bienvenue sur ${stationName}. Votre station d'information en continu.`,
+    en: `Welcome to ${stationName}. Your continuous news station.`,
+    sw: `Karibu ${stationName}. Kituo chako cha habari.`,
+    ln: `Bienvenue na ${stationName}. Embo ya sika na yo.`,
+  };
+  return texts[language] || texts.en;
+}
+
+/**
  * Generate a time announcement text.
  * @param {string} language - Channel language
  * @param {number} hour - Hour (0-23)

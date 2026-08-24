@@ -111,6 +111,7 @@ export async function getUnplayedTrack(channelId) {
 
 /**
  * Mark an item as played in a channel.
+ * Also updates the source row so the UI shows "completed" state.
  */
 export async function markPlayed(channelId, itemType, itemId, stationId = null, metadata = {}) {
   const insertData = {
@@ -138,6 +139,24 @@ export async function markPlayed(channelId, itemType, itemId, stationId = null, 
       stationId,
       hint: error.hint || null,
     });
+  }
+
+  // Update source row so UI shows "completed" state
+  if (itemType === 'event') {
+    // Try events table first
+    const { count } = await supabase
+      .from('events')
+      .update({ status: 'played' })
+      .eq('id', itemId)
+      .select('id', { count: 'exact', head: true });
+
+    // If no rows updated, try news_items (normalized events from news_items table)
+    if (count === 0) {
+      await supabase
+        .from('news_items')
+        .update({ is_processed: true })
+        .eq('id', itemId);
+    }
   }
 }
 
@@ -193,7 +212,7 @@ export async function getNextContent(channelId, language = 'fr', maxEvents = 3, 
   }
 
   // Step 1 & 3: Check LezoTraffic events (highest priority)
-  const lezoEvents = (await getUnplayedEventsByProvider(channelId, 'lezotraffic', maxEvents))
+  const lezoEvents = (await getUnplayedEventsByProvider(channelId, 'lezotraffic', maxEvents, language))
     .filter(e => !excludeIds.has(e.id));
   if (lezoEvents.length > 0) {
     console.log(`[queueManager] ${channelId}: found ${lezoEvents.length} LezoTraffic events`);
@@ -206,7 +225,7 @@ export async function getNextContent(channelId, language = 'fr', maxEvents = 3, 
   }
 
   // Step 4: Check recent news events (events table, then news_items fallback)
-  const newsEvents = (await getUnplayedEventsByCategory(channelId, ['news', 'regional', 'local', 'global'], maxEvents))
+  const newsEvents = (await getUnplayedEventsByCategory(channelId, ['news', 'regional', 'local', 'global'], maxEvents, language))
     .filter(e => !excludeIds.has(e.id));
   if (newsEvents.length > 0) {
     console.log(`[queueManager] ${channelId}: found ${newsEvents.length} news events (provider=${newsEvents[0]?.provider})`);
@@ -219,7 +238,7 @@ export async function getNextContent(channelId, language = 'fr', maxEvents = 3, 
   }
 
   // Step 5: Check weather events
-  const weatherEvents = (await getUnplayedEventsByCategory(channelId, ['weather'], maxEvents))
+  const weatherEvents = (await getUnplayedEventsByCategory(channelId, ['weather'], maxEvents, language))
     .filter(e => !excludeIds.has(e.id));
   if (weatherEvents.length > 0) {
     console.log(`[queueManager] ${channelId}: found ${weatherEvents.length} weather events`);
@@ -244,12 +263,13 @@ export async function getNextContent(channelId, language = 'fr', maxEvents = 3, 
 
 /**
  * Get unplayed events filtered by provider.
+ * Optionally filters by language match (interim fix until translation pipeline).
  */
-async function getUnplayedEventsByProvider(channelId, provider, limit = 3) {
+async function getUnplayedEventsByProvider(channelId, provider, limit = 3, language = null) {
   const playedSet = await getPlayedEventIds(channelId);
   const { data, error } = await supabase
     .from('events')
-    .select('id, title, summary, provider, category, subcategory, city, province, country, priority, occurred_at, created_at')
+    .select('id, title, summary, provider, category, subcategory, city, province, country, priority, language, occurred_at, created_at')
     .eq('status', 'active')
     .eq('provider', provider)
     .neq('category', 'geo')
@@ -262,19 +282,26 @@ async function getUnplayedEventsByProvider(channelId, provider, limit = 3) {
     return [];
   }
 
-  const unplayed = (data || []).filter(e => !playedSet.has(e.id));
+  let unplayed = (data || []).filter(e => !playedSet.has(e.id));
+
+  // Filter by language match (skip foreign-language items until translation exists)
+  if (language) {
+    unplayed = unplayed.filter(e => !e.language || e.language === language);
+  }
+
   return unplayed.slice(0, limit);
 }
 
 /**
  * Get unplayed events filtered by category array.
  * Falls back to news_items table if events table is empty.
+ * Optionally filters by language match (interim fix until translation pipeline).
  */
-async function getUnplayedEventsByCategory(channelId, categories, limit = 3) {
+async function getUnplayedEventsByCategory(channelId, categories, limit = 3, language = null) {
   const playedSet = await getPlayedEventIds(channelId);
   const { data, error } = await supabase
     .from('events')
-    .select('id, title, summary, provider, category, subcategory, city, province, country, priority, occurred_at, created_at')
+    .select('id, title, summary, provider, category, subcategory, city, province, country, priority, language, occurred_at, created_at')
     .eq('status', 'active')
     .in('category', categories)
     .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
@@ -286,12 +313,18 @@ async function getUnplayedEventsByCategory(channelId, categories, limit = 3) {
     return [];
   }
 
-  const unplayed = (data || []).filter(e => !playedSet.has(e.id));
+  let unplayed = (data || []).filter(e => !playedSet.has(e.id));
+
+  // Filter by language match (skip foreign-language items until translation exists)
+  if (language) {
+    unplayed = unplayed.filter(e => !e.language || e.language === language);
+  }
+
   if (unplayed.length > 0) return unplayed.slice(0, limit);
 
   // Fallback: query news_items table directly (RSS content lives here)
   if (categories.includes('news')) {
-    return getUnplayedNewsItems(channelId, limit);
+    return getUnplayedNewsItems(channelId, limit, language);
   }
   return [];
 }
@@ -299,8 +332,10 @@ async function getUnplayedEventsByCategory(channelId, categories, limit = 3) {
 /**
  * Get unplayed news from the news_items table (fallback when events table is empty).
  * Normalizes news_items rows to match the events format the engine expects.
+ * Note: news_items doesn't have a language column, so language filtering is
+ * not applied here — items are returned as-is (language: null matches any).
  */
-async function getUnplayedNewsItems(channelId, limit = 3) {
+async function getUnplayedNewsItems(channelId, limit = 3, _language = null) {
   const playedSet = await getPlayedEventIds(channelId);
 
   const { data, error } = await supabase
@@ -327,6 +362,7 @@ async function getUnplayedNewsItems(channelId, limit = 3) {
     province: item.region || null,
     country: 'CD',
     priority: 4,
+    language: null, // news_items doesn't track language — matches any channel
     occurred_at: item.published_at || item.ingested_at,
     created_at: item.ingested_at,
   }));
