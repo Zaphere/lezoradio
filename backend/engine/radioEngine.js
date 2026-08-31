@@ -16,6 +16,7 @@ import { supabase } from '../supabaseClient.js';
 import {
   generateEventScript,
   generateBulletinIntro,
+  generateBulletinOutro,
   generateBulletinApology,
   generateTrafficIntro,
   generateNewsIntro,
@@ -25,7 +26,19 @@ import {
   generateStationIdText,
   generateTimeAnnouncement,
   generateWelcomeText,
+  generateNoTrafficAnnouncement,
+  generateTrafficCheckIntro,
+  generateNoNewsAnnouncement,
+  generateNoWeatherAnnouncement,
 } from '../providers/scriptGenerator.js';
+
+/** Present this many news/traffic blocks, then introduce a song from storage/songs. */
+const CONTENT_BEFORE_MUSIC = 3;
+
+function ttsDuration(ttsResult, text) {
+  if (ttsResult?.durationSeconds > 0) return ttsResult.durationSeconds;
+  return ttsGenerator.estimateSpeechSeconds(text);
+}
 
 class RadioEngine {
   constructor() {
@@ -36,7 +49,8 @@ class RadioEngine {
     this.pendingTimers = new Map(); // channelId -> setTimeout handle
     this._pendingTrack = null; // { channelId, track } — track announced via intro, pending playback
     this._recentlyPlayed = new Map(); // channelId -> Map<eventId, timestamp> — in-memory dedup safety net
-    this._consecutiveContent = new Map(); // channelId -> count — forces music after 2 consecutive content segments
+    this._consecutiveContent = new Map(); // channelId -> count — forces a song after CONTENT_BEFORE_MUSIC
+    this._pendingNewContentDispatch = new Map(); // channelId -> setTimeout handle — debounced dispatch after new event
   }
 
   /**
@@ -238,8 +252,35 @@ class RadioEngine {
       if (!channel) continue;
       if (this.shouldRouteToChannel(normalized, channel)) {
         console.log(`[radioEngine] Routing ${event.id} to ${channelId}`);
+        this._scheduleNewContentDispatch(channelId);
       }
     }
+  }
+
+  /**
+   * Debounced dispatch after new content arrives.
+   * Batches multiple rapid events into a single dispatch per channel.
+   * Only dispatches if the channel is idle (waiting for next content).
+   */
+  _scheduleNewContentDispatch(channelId) {
+    const existing = this._pendingNewContentDispatch.get(channelId);
+    if (existing) clearTimeout(existing);
+
+    const timer = setTimeout(() => {
+      this._pendingNewContentDispatch.delete(channelId);
+      if (!this.running) return;
+
+      // Only dispatch if there's no pending natural-end timer (channel is idle)
+      // This prevents interrupting a currently-playing segment
+      const pendingTimer = this.pendingTimers.get(channelId);
+      if (!pendingTimer) {
+        console.log(`[radioEngine] New content arrived — dispatching for ${channelId}`);
+        this.dispatchNextContent(channelId, false).catch(err =>
+          console.error(`[radioEngine] New content dispatch failed for ${channelId}:`, err.message)
+        );
+      }
+    }, 5000);
+    this._pendingNewContentDispatch.set(channelId, timer);
   }
 
   /**
@@ -260,17 +301,18 @@ class RadioEngine {
    */
   resolveVoice(stationId, channel, contentType, language) {
     const channelLang = channel?.language || language || 'fr';
+    const fromChannel = channel?.primary_voice_id
+      ? { voice_id: channel.primary_voice_id, language: channelLang, style: 'formal' }
+      : null;
+    const fallbackId = channelLang === 'ln'
+      ? VOICE_IDS.KINSHASA_LINGALA
+      : channelLang === 'sw'
+        ? VOICE_IDS.SWAHILI_FEMALE
+        : VOICE_IDS.FRENCH_ADAM;
 
-    if (contentType === 'traffic') {
-      const lang = (channelLang === 'sw' || channelLang === 'ln') ? channelLang : 'fr';
-      return {
-        language: lang,
-        voice: languageController.resolveVoice(stationId, lang, 'formal')
-          || { voice_id: VOICE_IDS.SWAHILI_FEMALE, language: lang, style: 'formal' },
-      };
-    }
-
-    if (contentType === 'alert' || contentType === 'bulletin') {
+    // French global (Africa News) keeps Adam for bulletins/alerts.
+    // Regional channels keep their own cloned voice for every content type.
+    if ((contentType === 'alert' || contentType === 'bulletin') && channelLang === 'fr') {
       return {
         language: 'fr',
         voice: languageController.resolveVoice(stationId, 'fr', 'bulletin')
@@ -278,10 +320,11 @@ class RadioEngine {
       };
     }
 
-    let voice = languageController.resolveVoice(stationId, channelLang, 'formal');
-    if (!voice && channel?.primary_voice_id) {
-      voice = { voice_id: channel.primary_voice_id, language: channelLang, style: 'formal' };
-    }
+    const voice = languageController.resolveVoice(stationId, channelLang, 'formal')
+      || languageController.resolveVoice(stationId, channelLang, 'bulletin')
+      || fromChannel
+      || { voice_id: fallbackId, language: channelLang, style: 'formal' };
+
     return { language: channelLang, voice };
   }
 
@@ -305,7 +348,8 @@ class RadioEngine {
         next = await queueManager.getNextBackgroundTrack(channelId);
       }
       if (!next) {
-        console.warn(`[radioEngine] No background tracks available for ${channelId}`);
+        console.warn(`[radioEngine] No background tracks available for ${channelId} — retrying in 30s`);
+        this.scheduleNextContent(channelId, 30 * 1000);
         return;
       }
 
@@ -317,22 +361,33 @@ class RadioEngine {
       const trackName = next.title || decodeURIComponent(rawUrl.split('?')[0].substring(rawUrl.split('?')[0].lastIndexOf('/') + 1)).replace(/\.[^/.]+$/, '');
       const durationSeconds = next.duration_seconds || 180;
 
-      console.log(`[${new Date().toISOString()}] [radioEngine] Background segment for ${channelId}: ${trackName} (${durationSeconds}s)`);
+      // Distinguish REAL songs from background instrumentals.
+      // Songs (Music/ folder + music_tracks table) get announced and played in FULL
+      // as a foreground TRACK segment. Background instrumentals (BackMusic/ folder)
+      // remain AMBIENT beds that duck under the presenter.
+      const isBackground = next.isBackground !== false;
+
+      if (isBackground && state) {
+        state.backgroundUrl = next.audio_url;
+      }
+
+      console.log(`[${new Date().toISOString()}] [radioEngine] ${isBackground ? 'Background' : 'Track'} segment for ${channelId}: ${trackName} (${durationSeconds}s)`);
 
       this.updateCurrentSegment(channelId, {
-        segment_type: SEGMENT_TYPES.AMBIENT,
-        segment_id: `bg-${Date.now()}`,
+        segment_type: isBackground ? SEGMENT_TYPES.AMBIENT : SEGMENT_TYPES.TRACK,
+        segment_id: `${isBackground ? 'bg' : 'track'}-${Date.now()}`,
         audio_url: next.audio_url,
         audio_type: 'stream',
         title: `${stationName} — ${trackName}`,
+        artist: next.artist || null,
         duration_seconds: durationSeconds,
         language: state?.language || 'fr',
         voice_id: null,
         transition_type: 'crossfade',
-        description: 'Background Music',
+        description: isBackground ? 'Background Music' : 'Music Track',
       });
 
-      // After background track finishes, dispatch next content via priority chain
+      // After the segment finishes, dispatch next content via priority chain
       this.scheduleNextContent(channelId, durationSeconds * 1000);
     } catch (err) {
       console.error(`[${new Date().toISOString()}] [radioEngine] writeBackgroundSegment failed for ${channelId}:`, err.message);
@@ -366,14 +421,15 @@ class RadioEngine {
 
       console.log(`[${new Date().toISOString()}] [radioEngine] Welcome segment for ${channelId}: "${welcomeText}"`);
 
-      const ttsResult = await ttsGenerator.getOrGenerate(welcomeText, voice.voice.voice_id, voice.language);
+      const region = channel.region || 'global';
+      const ttsResult = await ttsGenerator.getOrGenerate(welcomeText, voice.voice.voice_id, voice.language, region);
       if (!ttsResult) {
         console.warn(`[radioEngine] TTS failed for welcome on ${channelId} — dispatching content`);
         this.dispatchNextContent(channelId);
         return;
       }
 
-      const durationSeconds = Math.ceil(welcomeText.length / 15) + 2;
+      const durationSeconds = ttsDuration(ttsResult, welcomeText);
 
       this.updateCurrentSegment(channelId, {
         segment_type: SEGMENT_TYPES.ANNOUNCEMENT,
@@ -472,6 +528,8 @@ class RadioEngine {
     const stationId = state.stationId || channel.station_id;
     const stationName = channel.name || channel.station_name || 'Radio Lezo';
 
+    console.log(`[${new Date().toISOString()}] [radioEngine] ▶ DISPATCH ${channelId} (${language}) ${isInterrupt ? '[interrupt]' : '[auto]'} — current=${state.currentSegment?.segment_type || 'none'}/${state.currentSegment?.title?.substring(0, 40) || 'none'}`);
+
     // If a music intro just played and the actual track is pending, play it now
     if (!isInterrupt && this._pendingTrack && this._pendingTrack.channelId === channelId) {
       const pending = this._pendingTrack;
@@ -486,12 +544,126 @@ class RadioEngine {
       ? new Set(this._recentlyPlayed.get(channelId).keys())
       : new Set();
 
+    // Traffic check: on bulletin interrupt OR every 3 content segments, check LezoTraffic
+    // and announce the result ("no traffic updates" if empty)
+    const lastTrafficCheck = this._lastTrafficCheck?.get(channelId) || 0;
+    const contentSinceTrafficCheck = this._contentSinceTrafficCheck?.get(channelId) || 0;
+    const shouldCheckTraffic = isInterrupt || contentSinceTrafficCheck >= 3;
+
+    if (shouldCheckTraffic) {
+      const trafficEvents = (await queueManager.getUnplayedEventsByProvider(channelId, 'lezotraffic', 3, language))
+        .filter(e => !excludeIds.has(e.id));
+
+      if (!this._lastTrafficCheck) this._lastTrafficCheck = new Map();
+      if (!this._contentSinceTrafficCheck) this._contentSinceTrafficCheck = new Map();
+      this._lastTrafficCheck.set(channelId, Date.now());
+      this._contentSinceTrafficCheck.set(channelId, 0);
+
+      if (trafficEvents.length === 0) {
+        // No traffic — announce and move on
+        console.log(`[radioEngine] ${channelId}: LezoTraffic check — no traffic updates`);
+        const noTrafficText = generateNoTrafficAnnouncement(language, stationName);
+        const checkVoice = this.resolveVoice(stationId, channel, 'traffic', language);
+
+        if (checkVoice.voice) {
+          const ttsResult = await ttsGenerator.getOrGenerate(noTrafficText, checkVoice.voice.voice_id, language, channel.region || 'global');
+          if (ttsResult) {
+            const duration = ttsDuration(ttsResult, noTrafficText);
+            this.updateCurrentSegment(channelId, {
+              segment_type: SEGMENT_TYPES.ANNOUNCEMENT,
+              segment_id: `traffic-check-${Date.now()}`,
+              audio_url: ttsResult.audioUrl,
+              audio_type: 'tts',
+              title: `${stationName} — Traffic Check`,
+              duration_seconds: duration,
+              language,
+              voice_id: checkVoice.voice.voice_id,
+              transition_type: 'duck',
+              description: 'Traffic check — no updates',
+            });
+            this.scheduleNextContent(channelId, duration * 1000);
+            return;
+          }
+        }
+      }
+    }
+
     // Force music after 2 consecutive content segments (prevents queue starvation)
     // Only on natural auto-advance — user-initiated skip bypasses this
     const consecCount = this._consecutiveContent.get(channelId) || 0;
-    const forceMusic = !isInterrupt && consecCount >= 2;
+    const forceMusic = !isInterrupt && consecCount >= CONTENT_BEFORE_MUSIC;
     if (forceMusic) {
       console.log(`[radioEngine] ${channelId}: forcing music after ${consecCount} consecutive content segments`);
+    }
+
+    // Throttled "content status sweep" — checks news + weather and announces when
+    // empty ("you're up to date"). Runs on bulletin interrupt OR every 3 segments,
+    // matching the traffic check cadence, so it doesn't hijack every single dispatch.
+    const contentSinceStatusCheck = this._contentSinceStatusCheck?.get(channelId) || 0;
+    const shouldCheckStatus = isInterrupt || contentSinceStatusCheck >= 3;
+    if (!forceMusic && shouldCheckStatus) {
+      const checkVoice = this.resolveVoice(stationId, channel, 'bulletin', language);
+
+      if (!this._contentSinceStatusCheck) this._contentSinceStatusCheck = new Map();
+      this._contentSinceStatusCheck.set(channelId, 0);
+
+      // Check news
+      const newsEvents = (await queueManager.getUnplayedEventsByCategory(channelId, ['news', 'regional', 'local', 'global'], 3, language))
+        .filter(e => !excludeIds.has(e.id));
+      if (newsEvents.length === 0 && checkVoice.voice) {
+        const noNewsText = generateNoNewsAnnouncement(language, stationName);
+        const ttsResult = await ttsGenerator.getOrGenerate(noNewsText, checkVoice.voice.voice_id, language, channel.region || 'global');
+        if (ttsResult) {
+          const duration = ttsDuration(ttsResult, noNewsText);
+          console.log(`[radioEngine] ${channelId}: news sweep — NO new news, announcing "up to date" (${duration}s)`);
+          this.updateCurrentSegment(channelId, {
+            segment_type: SEGMENT_TYPES.ANNOUNCEMENT,
+            segment_id: `news-check-${Date.now()}`,
+            audio_url: ttsResult.audioUrl,
+            audio_type: 'tts',
+            title: `${stationName} — News Check`,
+            duration_seconds: duration,
+            language,
+            voice_id: checkVoice.voice.voice_id,
+            transition_type: 'duck',
+            description: 'News check — up to date',
+          });
+          this.scheduleNextContent(channelId, duration * 1000);
+          return;
+        }
+      } else if (newsEvents.length > 0) {
+        console.log(`[radioEngine] ${channelId}: news sweep — ${newsEvents.length} news item(s) available, will present`);
+      }
+
+      // Check weather
+      const weatherEvents = (await queueManager.getUnplayedEventsByCategory(channelId, ['weather'], 3, language))
+        .filter(e => !excludeIds.has(e.id));
+      if (weatherEvents.length === 0 && checkVoice.voice) {
+        const noWeatherText = generateNoWeatherAnnouncement(language, stationName);
+        const ttsResult = await ttsGenerator.getOrGenerate(noWeatherText, checkVoice.voice.voice_id, language, channel.region || 'global');
+        if (ttsResult) {
+          const duration = ttsDuration(ttsResult, noWeatherText);
+          console.log(`[radioEngine] ${channelId}: weather sweep — nothing new, announcing "unchanged" (${duration}s)`);
+          this.updateCurrentSegment(channelId, {
+            segment_type: SEGMENT_TYPES.ANNOUNCEMENT,
+            segment_id: `weather-check-${Date.now()}`,
+            audio_url: ttsResult.audioUrl,
+            audio_type: 'tts',
+            title: `${stationName} — Weather Check`,
+            duration_seconds: duration,
+            language,
+            voice_id: checkVoice.voice.voice_id,
+            transition_type: 'duck',
+            description: 'Weather check — unchanged',
+          });
+          this.scheduleNextContent(channelId, duration * 1000);
+          return;
+        }
+      }
+    } else if (this._contentSinceStatusCheck) {
+      // Increment the segment counter so the sweep fires after a few segments
+      const cur = this._contentSinceStatusCheck.get(channelId) || 0;
+      this._contentSinceStatusCheck.set(channelId, cur + 1);
     }
 
     const nextContent = await queueManager.getNextContent(channelId, language, 3, excludeIds, forceMusic);
@@ -500,48 +672,60 @@ class RadioEngine {
       // Reset consecutive content counter
       this._consecutiveContent.set(channelId, 0);
 
-      // No priority content — play next background music track
+      // No priority content — play next music track
+      if (nextContent?.musicTrack) {
+        const track = nextContent.musicTrack;
 
-      // Play outro for the track that just finished (if it was a background track)
-      const finishedSegment = state.currentSegment;
-      if (finishedSegment?.segment_type === SEGMENT_TYPES.AMBIENT && finishedSegment.title) {
-        const title = finishedSegment.title;
-        const cleanName = title.includes('—') ? title.split('—')[1].trim() : title.replace(`${stationName} — `, '');
-        const outroText = generateMusicOutro(language, cleanName, stationName);
-        const outroVoice = this.resolveVoice(stationId, channel, 'bulletin', language);
-        if (outroVoice.voice && outroText) {
-          const ttsResult = await ttsGenerator.getOrGenerate(outroText, outroVoice.voice.voice_id, language);
-          if (ttsResult) {
-            const outroDuration = Math.ceil(outroText.length / 15) + 1;
-            this.updateCurrentSegment(channelId, {
-              segment_type: SEGMENT_TYPES.ANNOUNCEMENT,
-              segment_id: `music-outro-${Date.now()}`,
-              audio_url: ttsResult.audioUrl,
-              audio_type: 'tts',
-              title: `${stationName} — Outro`,
-              duration_seconds: outroDuration,
-              language,
-              voice_id: outroVoice.voice.voice_id,
-              transition_type: 'crossfade',
-              description: `That was: ${cleanName}`,
-            });
-            this.scheduleNextContent(channelId, outroDuration * 1000);
-            return;
+        // BACKGROUND MUSIC: play directly as ambient bed — no intro/outro announcement
+        // Background music (Backmusic1-3.mp3, etc.) plays continuously under everything
+        if (track.isBackground === true) {
+          console.log(`[radioEngine] ${channelId}: background music — playing as ambient bed (no announcement)`);
+          this.writeBackgroundSegment(channelId, track);
+          return;
+        }
+
+        // ENTERTAINMENT MUSIC: announced with intro, played as foreground track
+        // Songs from songs/ folder get a music intro announcement before playing
+
+        // Play outro for the track that just finished (if it was an entertainment track)
+        const finishedSegment = state.currentSegment;
+        if (finishedSegment?.segment_type === SEGMENT_TYPES.TRACK && finishedSegment.title) {
+          const title = finishedSegment.title;
+          const cleanName = title.includes('—') ? title.split('—')[1].trim() : title.replace(`${stationName} — `, '');
+          const outroText = generateMusicOutro(language, cleanName, stationName);
+          const outroVoice = this.resolveVoice(stationId, channel, 'bulletin', language);
+          if (outroVoice.voice && outroText) {
+            const ttsResult = await ttsGenerator.getOrGenerate(outroText, outroVoice.voice.voice_id, language, channel.region || 'global');
+            if (ttsResult) {
+              const outroDuration = ttsDuration(ttsResult, outroText);
+              this.updateCurrentSegment(channelId, {
+                segment_type: SEGMENT_TYPES.ANNOUNCEMENT,
+                segment_id: `music-outro-${Date.now()}`,
+                audio_url: ttsResult.audioUrl,
+                audio_type: 'tts',
+                title: `${stationName} — Outro`,
+                duration_seconds: outroDuration,
+                language,
+                voice_id: outroVoice.voice.voice_id,
+                transition_type: 'crossfade',
+                description: `That was: ${cleanName}`,
+              });
+              this.scheduleNextContent(channelId, outroDuration * 1000);
+              return;
+            }
           }
         }
-      }
 
-      if (nextContent?.musicTrack) {
-        // Generate intro announcement for the track
-        const track = nextContent.musicTrack;
+        // Generate intro announcement for the entertainment track
         const trackName = track.title || 'Music';
-        const introText = generateMusicIntro(language, trackName, stationName);
+        const artist = track.artist || '';
+        const introText = generateMusicIntro(language, trackName, stationName, artist);
         const voice = this.resolveVoice(stationId, channel, 'bulletin', language);
 
         if (voice.voice) {
-          const ttsResult = await ttsGenerator.getOrGenerate(introText, voice.voice.voice_id, language);
+          const ttsResult = await ttsGenerator.getOrGenerate(introText, voice.voice.voice_id, language, channel.region || 'global');
           if (ttsResult) {
-            const introDuration = Math.ceil(introText.length / 15) + 1;
+            const introDuration = ttsDuration(ttsResult, introText);
             this.updateCurrentSegment(channelId, {
               segment_type: SEGMENT_TYPES.ANNOUNCEMENT,
               segment_id: `music-intro-${Date.now()}`,
@@ -561,9 +745,10 @@ class RadioEngine {
           }
         }
 
-        // Fall through if intro TTS fails
+        // Fall through if intro TTS fails — play as background fallback
         this.writeBackgroundSegment(channelId);
       } else {
+        // No music track available — play ambient background
         this.writeBackgroundSegment(channelId);
       }
       return;
@@ -592,7 +777,7 @@ class RadioEngine {
       apologeticPrefix = generateBulletinApology(voice.language, stationName) + ' ';
     }
 
-    // Generate content intro
+    // Generate content intro with presenter-style transitions
     let contentIntro;
     switch (contentType) {
       case 'traffic':
@@ -608,21 +793,96 @@ class RadioEngine {
         contentIntro = generateBulletinIntro(voice.language, stationName, events.length);
     }
 
-    // Generate event scripts
-    const eventScripts = events.map(e => generateEventScript(e, voice.language));
+    // Add presenter-style opening if this is interrupting content
+    if (isInterrupt) {
+      contentIntro = `And now, ${contentIntro.toLowerCase()}`;
+    }
+
+    // Translate event content to target language if needed
+    const translatedEvents = [];
+    for (const e of events) {
+      const needsTranslation = e.language && e.language !== voice.language;
+      if (needsTranslation) {
+        const titleResult = await languageController.translateIfNeeded(e.title || '', voice.language, e.language);
+        const summaryResult = await languageController.translateIfNeeded(e.summary || '', voice.language, e.language);
+        translatedEvents.push({
+          ...e,
+          title: titleResult.translated,
+          summary: summaryResult.translated,
+        });
+      } else {
+        translatedEvents.push(e);
+      }
+    }
+
+    // Generate event scripts with simple transitions
+    const eventScripts = translatedEvents.map((e, index) => {
+      const script = generateEventScript(e, voice.language);
+      if (index > 0 && index < events.length - 1) {
+        return `${script}. Next,`;
+      } else if (index > 0) {
+        return `${script}. That's the latest.`;
+      }
+      return script;
+    });
+
+    // Build complete bulletin block: intro + stories + outro
+    const outroText = generateBulletinOutro ? generateBulletinOutro(voice.language, stationName) : '';
     const contentText = `${contentIntro} ${eventScripts.join('. ')}`;
-    const fullText = `${apologeticPrefix}${contentText}`;
+    const fullText = `${apologeticPrefix}${contentText}${outroText ? '. ' + outroText : ''}`;
 
-    console.log(`[${new Date().toISOString()}] [radioEngine] Generating ${contentType} TTS for ${channelId} (${fullText.length} chars)`);
+    // Content change detection: hash the event IDs to detect unchanged batches
+    const region = channel.region || 'global';
+    const eventIds = events.map(e => e.id || e.title).sort();
+    const contentHash = ttsGenerator.contentHash(region, voice.language, eventIds);
 
-    const ttsResult = await ttsGenerator.getOrGenerate(fullText, voice.voice.voice_id, voice.language);
+    // Check if we already have audio for this exact content batch
+    const cached = await ttsGenerator.getCachedAudio(fullText, voice.voice.voice_id, voice.language, region);
+    if (cached) {
+      console.log(`[${new Date().toISOString()}] [radioEngine] Content unchanged for ${contentType} on ${channelId} — reusing cached audio`);
+      const durationSeconds = ttsGenerator.durationSecondsFromFile(cached.audio_file_size, fullText);
+      this.updateCurrentSegment(channelId, {
+        segment_type: SEGMENT_TYPES.BULLETIN,
+        segment_id: `${contentType}-${contentHash.substring(0,8)}`,
+        audio_url: cached.audio_url,
+        audio_type: 'tts',
+        title: `${stationName} — ${contentType === 'traffic' ? 'Traffic Update' : contentType === 'weather' ? 'Weather' : 'News Update'}`,
+        duration_seconds: durationSeconds,
+        language: voice.language,
+        voice_id: voice.voice.voice_id,
+        transition_type: 'duck',
+        duck_volume: 0.06,
+        provider: events[0]?.provider || null,
+        city: events[0]?.city || null,
+        province: events[0]?.province || null,
+        description: fullText.substring(0, 500),
+      });
+      this._consecutiveContent.set(channelId, (this._consecutiveContent.get(channelId) || 0) + 1);
+      if (this._contentSinceTrafficCheck) {
+        this._contentSinceTrafficCheck.set(channelId, (this._contentSinceTrafficCheck.get(channelId) || 0) + 1);
+      }
+      for (const event of events) {
+        await queueManager.markPlayed(channelId, 'event', event.id, stationId);
+        this._markRecentlyPlayed(channelId, event.id);
+      }
+      // Schedule the next content after this (cached) voiceover finishes so the
+      // stream keeps auto-advancing — otherwise it would hang here forever.
+      this.scheduleNextContent(channelId, durationSeconds * 1000);
+      return;
+    }
+
+    console.log(`[${new Date().toISOString()}] [radioEngine] Generating ${contentType} TTS for ${channelId} [${region}/${voice.language}] (${fullText.length} chars, voice: ${voice.voice.voice_id})`);
+
+    const ttsResult = await ttsGenerator.getOrGenerate(fullText, voice.voice.voice_id, voice.language, region);
     if (!ttsResult) {
-      console.warn(`[${new Date().toISOString()}] [radioEngine] TTS generation failed for ${contentType} on ${channelId} — playing background`);
+      console.warn(`[${new Date().toISOString()}] [radioEngine] TTS generation failed for ${contentType} on ${channelId} — text length: ${fullText.length}, voice: ${voice.voice.voice_id}, language: ${voice.language} — playing background`);
       this.writeBackgroundSegment(channelId);
       return;
     }
 
-    const durationSeconds = Math.ceil(fullText.length / 15) + 2;
+    console.log(`[${new Date().toISOString()}] [radioEngine] TTS generated for ${contentType} on ${channelId} (${ttsResult.cached ? 'cached' : 'new'})`);
+
+    const durationSeconds = ttsDuration(ttsResult, fullText);
     const topEvent = events[0] || {};
 
     this.updateCurrentSegment(channelId, {
@@ -644,6 +904,9 @@ class RadioEngine {
 
     // Track consecutive content segments (reset to 0 when music plays)
     this._consecutiveContent.set(channelId, (this._consecutiveContent.get(channelId) || 0) + 1);
+    if (this._contentSinceTrafficCheck) {
+      this._contentSinceTrafficCheck.set(channelId, (this._contentSinceTrafficCheck.get(channelId) || 0) + 1);
+    }
 
     // Mark events as played
     for (const event of events) {
@@ -654,7 +917,14 @@ class RadioEngine {
         .select('id')
         .eq('news_item_id', event.id);
       if (linkedScripts && linkedScripts.length > 0) {
-        await supabase.from('radio_scripts').update({ is_read: true }).in('id', linkedScripts.map(s => s.id));
+        // Update each script individually to avoid Supabase .in() issues
+        for (const script of linkedScripts) {
+          try {
+            await supabase.from('radio_scripts').update({ is_read: true }).eq('id', script.id);
+          } catch (err) {
+            console.error(`[radioEngine] Failed to mark script ${script.id} as read:`, err.message);
+          }
+        }
       }
     }
 
@@ -709,9 +979,9 @@ class RadioEngine {
     }
 
     if (voice) {
-      const ttsResult = await ttsGenerator.getOrGenerate(stationIdText, voice.voice_id, language);
+      const ttsResult = await ttsGenerator.getOrGenerate(stationIdText, voice.voice_id, language, channel?.region || 'global');
       if (ttsResult) {
-        const durationSeconds = 5;
+        const durationSeconds = ttsDuration(ttsResult, stationIdText);
         this.updateCurrentSegment(channelId, {
           segment_type: SEGMENT_TYPES.JINGLE,
           segment_id: `station-id-${Date.now()}`,
@@ -724,9 +994,7 @@ class RadioEngine {
           transition_type: 'duck',
           duck_volume: 0.06,
         });
-        // Background continues — no writeBackgroundSegment or scheduleNextContent.
-        // The background track's original timer is still running and will
-        // dispatch the next content when it finishes.
+        this.scheduleNextContent(channelId, durationSeconds * 1000);
       }
     }
   }
@@ -745,9 +1013,9 @@ class RadioEngine {
     const timeText = generateTimeAnnouncement(language, hour, minute);
 
     if (voice) {
-      const ttsResult = await ttsGenerator.getOrGenerate(timeText, voice.voice_id, language);
+      const ttsResult = await ttsGenerator.getOrGenerate(timeText, voice.voice_id, language, channel?.region || 'global');
       if (ttsResult) {
-        const durationSeconds = 8;
+        const durationSeconds = ttsDuration(ttsResult, timeText);
         this.updateCurrentSegment(channelId, {
           segment_type: SEGMENT_TYPES.ANNOUNCEMENT,
           segment_id: `time-${Date.now()}`,
@@ -966,7 +1234,7 @@ class RadioEngine {
     state.startedAt = new Date().toISOString();
     state.version += 1;
 
-    console.log(`[${new Date().toISOString()}] [radioEngine] Writing state for ${channelId}: type=${segmentData.segment_type}, title=${segmentData.title?.substring(0, 60)}`);
+    console.log(`[${new Date().toISOString()}] [radioEngine] ▶ NOW PLAYING ${channelId}: [${segmentData.segment_type}${segmentData.audio_type === 'tts' ? `/VOICE(${segmentData.language ? segmentData.language : '?'})` : ''}] ${segmentData.title?.substring(0, 60)} (${segmentData.duration_seconds || '?'}s${segmentData.voice_id ? ' · voice=' + segmentData.voice_id : ''})`);
     await playbackController.updateState(channelId, state);
     await playbackController.logPlayback(channelId, state.currentSegment, state.stationId);
     radioWsServer.broadcastState(channelId, this.formatStateForFrontend(state));
@@ -1003,6 +1271,7 @@ class RadioEngine {
       city: state.currentSegment.city || null,
       province: state.currentSegment.province || null,
       description: state.currentSegment.description || null,
+      background_audio_url: state.backgroundUrl || null,
       version: state.version,
       generated_at: new Date().toISOString(),
     };
@@ -1036,6 +1305,10 @@ class RadioEngine {
     radioWsServer.stopRadioWsServer();
     if (this.refreshInterval) clearInterval(this.refreshInterval);
     if (this.backgroundRotationInterval) clearInterval(this.backgroundRotationInterval);
+    for (const timer of this._pendingNewContentDispatch.values()) {
+      clearTimeout(timer);
+    }
+    this._pendingNewContentDispatch.clear();
     console.log(`[${new Date().toISOString()}] [radioEngine] Engine stopped`);
   }
 }

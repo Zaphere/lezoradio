@@ -1,15 +1,9 @@
-import { createClient } from '@supabase/supabase-js';
-import ws from 'ws';
-import dotenv from 'dotenv';
-dotenv.config();
+import { pool } from './supabaseClient.js';
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { realtime: { transport: ws } });
-
-const { data } = await supabase
-  .from('radio_scripts')
-  .select('script, region, category')
-  .eq('region', 'congo')
-  .limit(5);
+const { rows: data } = await pool.query(
+  'SELECT script, region, category FROM radio_scripts WHERE region = $1 LIMIT 5',
+  ['congo']
+);
 
 for (const s of data || []) {
   console.log('---');

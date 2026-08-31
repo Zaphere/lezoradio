@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg-primary: #FFFFFF;
+  --color-bg-primary: #F4F5F7;
   --color-bg-primary-dark: #0F0F12;
   --color-primary: #00A651;
   --color-primary-light: #00C45E;
@@ -10,16 +10,18 @@
   --color-alert-light: #E84949;
   --color-alert-dark: #B01E1E;
   --color-success: #00A651;
-  --color-surface: #F8F8F8;
-  --color-surface-dark: rgba(255, 255, 255, 0.05);
-  --color-surface-hover: #F0F0F0;
+  --color-surface: #FFFFFF;
+  --color-surface-dark: rgba(255, 255, 255, 0.06);
+  --color-surface-hover: #EEF0F2;
   --color-surface-hover-dark: rgba(255, 255, 255, 0.1);
-  --color-surface-subtle: #F5F5F5;
-  --color-surface-subtle-dark: rgba(255, 255, 255, 0.03);
-  --color-text-primary: #111111;
+  --color-surface-subtle: #E8EAED;
+  --color-surface-subtle-dark: rgba(255, 255, 255, 0.04);
+  --color-text-primary: #1A1D23;
   --color-text-primary-dark: #F1F5F9;
-  --color-text-secondary: #555555;
+  --color-text-secondary: #6B7280;
   --color-text-secondary-dark: #94A3B8;
+  --color-border: #E2E5EA;
+  --color-border-dark: rgba(255, 255, 255, 0.08);
 }
 
 @layer base {
@@ -39,11 +41,12 @@
 
   body.dark-mode {
     --color-bg-primary: #0F0F12;
-    --color-surface: rgba(255, 255, 255, 0.05);
+    --color-surface: rgba(255, 255, 255, 0.06);
     --color-surface-hover: rgba(255, 255, 255, 0.1);
-    --color-surface-subtle: rgba(255, 255, 255, 0.03);
+    --color-surface-subtle: rgba(255, 255, 255, 0.04);
     --color-text-primary: #F1F5F9;
     --color-text-secondary: #94A3B8;
+    --color-border: rgba(255, 255, 255, 0.08);
     background-color: #0F0F12;
     color: #F1F5F9;
   }
@@ -64,15 +67,17 @@
 }
 
 @utility card {
-  background: var(--color-bg-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 1.5rem;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-  transition: box-shadow 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  transition: box-shadow 0.2s ease, transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
 }
 
 body.dark-mode .card {
   background: var(--color-surface);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  border-color: var(--color-border);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
 }
 
 @utility card-hoverable {
@@ -81,23 +86,23 @@ body.dark-mode .card {
 
 @media (hover: hover) {
   .card-hoverable:hover {
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
     transform: translateY(-2px);
   }
 
   body.dark-mode .card-hoverable:hover {
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   }
 }
 
 @utility glass {
-  background: var(--color-bg-primary);
+  background: var(--color-surface);
   backdrop-filter: blur(16px);
   transition: background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 body.dark-mode .glass {
-  background: rgba(15, 15, 18, 0.85);
+  background: rgba(15, 15, 18, 0.88);
 }
 
 @utility glass-hover {
@@ -106,27 +111,27 @@ body.dark-mode .glass {
 }
 
 @utility shadow-soft {
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
 }
 
 @utility shadow-soft-lg {
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
 }
 
 @utility shadow-soft-xl {
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.14);
 }
 
 body.dark-mode .shadow-soft {
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
 body.dark-mode .shadow-soft-lg {
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
 body.dark-mode .shadow-soft-xl {
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
 }
 
 @utility neon-pulse {
@@ -145,6 +150,23 @@ body.dark-mode .shadow-soft-xl {
 
 @utility animate-slide-up {
   animation: slideUp 0.3s ease-out;
+}
+
+@keyframes station-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(0.88); }
+  100% { transform: scale(1); }
+}
+
+@keyframes station-glow {
+  0% { box-shadow: 0 0 0 0 var(--station-glow, rgba(0,166,81,0.4)); }
+  70% { box-shadow: 0 0 0 10px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+@keyframes ring-expand {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  100% { transform: scale(1.4); opacity: 0; }
 }
 
 /* Radio Visualizer Animations */

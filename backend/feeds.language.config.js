@@ -1,5 +1,6 @@
 // Language-restricted RSS feeds: French, Swahili, Lingala only
 // No English feeds — these are the multilingual news sources
+// Region classification: kinshasa | goma | lubumbashi | global
 
 export const LANGUAGE_FEEDS = {
   fr: [
@@ -56,7 +57,7 @@ export const LANGUAGE_FEEDS = {
     {
       name: 'Radio Okapi (Français)',
       url: 'https://www.radiookapi.net/rss.xml',
-      region: 'congo',
+      region: 'global',
       category: 'regional',
       language: 'fr',
       country: 'CD',
@@ -66,7 +67,7 @@ export const LANGUAGE_FEEDS = {
     {
       name: 'Actualite.cd',
       url: 'https://actualite.cd/feed',
-      region: 'congo',
+      region: 'global',
       category: 'regional',
       language: 'fr',
       country: 'CD',
@@ -76,7 +77,7 @@ export const LANGUAGE_FEEDS = {
     {
       name: '7sur7.cd',
       url: 'http://7sur7.cd/index.php?format=feed&type=rss',
-      region: 'congo',
+      region: 'global',
       category: 'regional',
       language: 'fr',
       country: 'CD',
@@ -109,7 +110,7 @@ export const LANGUAGE_FEEDS = {
     {
       name: 'BBC News Swahili',
       url: 'https://www.bbc.com/swahili/index.xml',
-      region: 'east-africa',
+      region: 'global',
       category: 'global',
       language: 'sw',
       country: null,
@@ -119,7 +120,7 @@ export const LANGUAGE_FEEDS = {
     {
       name: 'VOA Swahili',
       url: 'https://www.voaswahili.com/api/zmrqee',
-      region: 'east-africa',
+      region: 'global',
       category: 'global',
       language: 'sw',
       country: null,
@@ -129,7 +130,7 @@ export const LANGUAGE_FEEDS = {
     {
       name: 'DW Kiswahili',
       url: 'https://rss.dw.com/rdf/rss-sw-kiswahili',
-      region: 'east-africa',
+      region: 'global',
       category: 'global',
       language: 'sw',
       country: null,
@@ -139,7 +140,7 @@ export const LANGUAGE_FEEDS = {
     {
       name: 'RFI Kiswahili',
       url: 'https://www.rfi.fr/sw/africa/rss',
-      region: 'east-africa',
+      region: 'global',
       category: 'global',
       language: 'sw',
       country: null,
@@ -152,7 +153,7 @@ export const LANGUAGE_FEEDS = {
     {
       name: 'VOA Lingala (Regional)',
       url: 'https://www.voalingala.com/api/',
-      region: 'congo',
+      region: 'kinshasa',
       category: 'regional',
       language: 'ln',
       country: 'CD',

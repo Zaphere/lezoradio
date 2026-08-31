@@ -8,7 +8,7 @@ interface Props {
 const MODE_CONFIG: Record<BroadcastMode, { label: string; color: string; pulse: boolean }> = {
   IDLE: {
     label: 'OFFLINE',
-    color: 'bg-[#F0F0F0] dark:bg-white/10 text-[#555555] dark:text-[#94A3B8]',
+    color: 'bg-[var(--color-surface-subtle)] dark:bg-white/8 text-[#6B7280] dark:text-[#94A3B8] border border-[var(--color-border)] dark:border-white/10',
     pulse: false,
   },
   LIVE_NEWS: {
@@ -18,12 +18,12 @@ const MODE_CONFIG: Record<BroadcastMode, { label: string; color: string; pulse: 
   },
   MUSIC_FILL: {
     label: 'MUSIC FILL',
-    color: 'bg-[#00A651]/80 text-white shadow-[0_2px_8px_rgba(0,166,81,0.2)]',
+    color: 'bg-[#00A651]/85 text-white shadow-[0_2px_8px_rgba(0,166,81,0.2)]',
     pulse: false,
   },
   GLOBAL_BULLETIN: {
     label: 'GLOBAL BULLETIN',
-    color: 'bg-[#00A651]/70 text-white shadow-[0_2px_8px_rgba(0,166,81,0.2)]',
+    color: 'bg-[#3C3B6E] text-white shadow-[0_2px_8px_rgba(60,59,110,0.3)]',
     pulse: true,
   },
   EMERGENCY: {

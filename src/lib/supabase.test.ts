@@ -1,28 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockSupabaseFrom } = vi.hoisted(() => ({
-  mockSupabaseFrom: vi.fn(),
-}));
-
-vi.mock('@supabase/supabase-js', () => ({
-  createClient: vi.fn(() => ({
-    from: mockSupabaseFrom,
-  })),
-}));
-
 import { fetchNewsItems } from './supabase';
 
 describe('supabase content proxy', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mockSupabaseFrom.mockReturnValue({
-      select: vi.fn().mockReturnThis(),
-      gte: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockResolvedValue({ data: [], error: null }),
-      eq: vi.fn().mockReturnThis(),
-      in: vi.fn().mockReturnThis(),
-    });
   });
 
   it('uses the backend content proxy when available', async () => {

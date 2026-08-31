@@ -1,35 +1,32 @@
 /**
  * Deep trace of real LezoTraffic events — find traffic/security incidents
  */
-import { createClient } from '@supabase/supabase-js';
+import { pool } from './supabaseClient.js';
 import dotenv from 'dotenv';
-import ws from 'ws';
 
 dotenv.config({ path: 'backend/.env' });
-
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { realtime: { transport: ws } });
 
 // 1. Count by category
 console.log('═══ LezoTraffic events by category ═══');
 const categories = ['traffic', 'security', 'emergency', 'geo', 'event', 'transport', 'news'];
 for (const cat of categories) {
-  const { count } = await supabase
-    .from('events')
-    .select('*', { count: 'exact', head: true })
-    .eq('provider', 'lezotraffic')
-    .eq('category', cat);
-  console.log(`  ${cat}: ${count} events`);
+  const { rows } = await pool.query(
+    `SELECT COUNT(*) as count FROM events
+     WHERE provider = $1 AND category = $2`,
+    ['lezotraffic', cat]
+  );
+  console.log(`  ${cat}: ${rows[0].count} events`);
 }
 
 // 2. Find actual traffic/security incidents (not geo)
 console.log('\n═══ Real traffic/security incidents (last 10) ═══');
-const { data: incidents } = await supabase
-  .from('events')
-  .select('*')
-  .eq('provider', 'lezotraffic')
-  .not('category', 'eq', 'geo')
-  .order('created_at', { ascending: false })
-  .limit(10);
+const { rows: incidents } = await pool.query(
+  `SELECT * FROM events
+   WHERE provider = $1 AND category != $2
+   ORDER BY created_at DESC
+   LIMIT 10`,
+  ['lezotraffic', 'geo']
+);
 
 if (!incidents || incidents.length === 0) {
   console.log('  No traffic/security incidents found');
@@ -73,12 +70,12 @@ if (topIncident) {
 console.log('\n═══ LezoTraffic by provider_type ═══');
 const types = ['incident', 'alert', 'city', 'province', 'destination'];
 for (const t of types) {
-  const { count } = await supabase
-    .from('events')
-    .select('*', { count: 'exact', head: true })
-    .eq('provider', 'lezotraffic')
-    .eq('provider_type', t);
-  console.log(`  ${t}: ${count}`);
+  const { rows } = await pool.query(
+    `SELECT COUNT(*) as count FROM events
+     WHERE provider = $1 AND provider_type = $2`,
+    ['lezotraffic', t]
+  );
+  console.log(`  ${t}: ${rows[0].count}`);
 }
 
 console.log('\n═══ Deep trace complete ═══');

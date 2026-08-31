@@ -15,7 +15,6 @@ import { DRC_COUNTRY, getRegionBySlug } from '../lib/drcRegions';
 import { resolveTimezone } from '../lib/stationTime';
 import { useStationClock } from '../hooks/useStationClock';
 import { getCountryTheme } from '../lib/countryTheme';
-
 import LiveIndicator from '../components/LiveIndicator';
 import AudioVisualizer from '../components/AudioVisualizer';
 import FrequencyDial from '../components/FrequencyDial';
@@ -136,7 +135,7 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
   });
 
   useEffect(() => {
-    if (nowPlaying?.version) {
+    if (nowPlaying?.version !== undefined) {
       latestVersionRef.current = nowPlaying.version;
     }
   }, [nowPlaying?.version]);
@@ -146,11 +145,14 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
 
     let interval: ReturnType<typeof setInterval> | null = null;
     let pollCount = 0;
-    const maxAttempts = 10;
+    const maxAttempts = 20; // Increased from 10 to give more time for backend to advance
 
     const poll = async () => {
       pollCount++;
       await refetchNowPlaying();
+
+      // Give the useEffect time to update latestVersionRef
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       if (latestVersionRef.current > versionAtEnd) {
         if (interval) {
@@ -160,7 +162,9 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
         return;
       }
 
+      // Fail-safe: force skip to live if we've been waiting too long (silence detection)
       if (pollCount >= maxAttempts && interval) {
+        console.log('[Radio] Auto-advance timeout - forcing skip to live');
         setSkipToLive(true);
         clearInterval(interval);
         interval = null;
@@ -168,7 +172,7 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
     };
 
     poll();
-    interval = setInterval(poll, 1500);
+    interval = setInterval(poll, 1000); // Changed from 1500ms to 1000ms for faster response
   }, [refetchNowPlaying]);
 
   const audio = useAudioExecutor({ nowPlaying, enabled: userStarted, onTrackEnd: handleTrackEnd });
@@ -217,6 +221,7 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
     '--c-secondary': theme.secondary,
     '--c-accent': theme.accent,
     '--c-glow': theme.glow,
+    '--c-gradient': theme.gradient,
   } as CSSProperties), [theme]);
 
   const timezone = useMemo(
@@ -270,6 +275,8 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
     return () => clearInterval(interval);
   }, []);
 
+  const isVoicePlaying = audio.isPlaying && ['bulletin', 'tts', 'announcement', 'jingle'].includes(nowPlaying?.segmentType ?? '');
+
   const mode = useMemo<BroadcastMode>(() => {
     if (!isLive) return 'IDLE';
     if (isMusicMode) return 'MUSIC_FILL';
@@ -301,11 +308,11 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
         }
       `}</style>
 
-      <div className="sticky top-0 z-40 bg-bg-primary/80 backdrop-blur-2xl shadow-[0_2px_12px_rgba(0,0,0,0.04)] shrink-0 transition-colors duration-300">
+      <div className="sticky top-0 z-40 bg-bg-primary/85 backdrop-blur-2xl border-b border-[var(--color-border)] shadow-[0_1px_8px_rgba(0,0,0,0.03)] shrink-0 transition-colors duration-300">
         <div className="w-full px-4 py-3 flex items-center justify-between">
           <button
             onClick={() => navigate('/')}
-            className={`${SOFT_BTN} flex items-center gap-1.5 text-[#555555] dark:text-[#94A3B8] hover:text-[#00A651] min-h-10 -ml-1 pl-1 pr-3 rounded-full`}
+            className={`${SOFT_BTN} flex items-center gap-1.5 text-[#6B7280] dark:text-[#94A3B8] hover:text-[#00A651] min-h-10 -ml-1 pl-1 pr-3 rounded-full`}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -325,16 +332,23 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
         <div className="space-y-4">
           <div className="text-center space-y-1.5 rf-fade-up">
             <div
-              className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-white shadow-[0_4px_16px_rgba(0,0,0,0.08)] transition-shadow duration-500"
+              className="inline-flex items-center justify-center w-14 h-14 rounded-full transition-shadow duration-500 relative overflow-hidden"
               style={{
-                boxShadow: isLive ? `0 0 20px -4px var(--c-glow)` : '0 4px 16px rgba(0,0,0,0.08)',
+                background: theme.gradient,
+                boxShadow: isLive
+                  ? `0 0 24px -4px var(--c-glow), 0 4px 12px rgba(0,0,0,0.1)`
+                  : `0 4px 12px rgba(0,0,0,0.08)`,
+                border: '2px solid rgba(255,255,255,0.25)',
               }}
             >
-              {displayIcon}
+              <div className="absolute inset-0 bg-white/15" />
+              <span className="relative z-10 drop-shadow-[0_1px_2px_rgba(0,0,0,0.2)]">
+                {displayIcon}
+              </span>
             </div>
-            <h1 className="text-[22px] font-bold text-[#111111] dark:text-[#F1F5F9] tracking-tight">{displayName}</h1>
+            <h1 className="text-[22px] font-bold text-[#1A1D23] dark:text-[#F1F5F9] tracking-tight">{displayName}</h1>
             {displaySubtitle && (
-              <p className="text-sm text-[#555555] dark:text-[#94A3B8] leading-none">{displaySubtitle}</p>
+              <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] leading-none">{displaySubtitle}</p>
             )}
             <div className="flex items-center justify-center gap-1.5 mt-1">
               <BroadcastModeIndicator mode={mode} bulletinHour={null} />
@@ -366,7 +380,11 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
                   setUserStarted(true);
                   audio.resumeAudioContext();
                 }}
-                className={`${SOFT_BTN} inline-flex items-center gap-1.5 px-6 py-2.5 rounded-full text-white text-base font-bold bg-[#00A651] hover:bg-[#00C45E] shadow-[0_4px_16px_rgba(0,166,81,0.35)] active:scale-95 transition-all cursor-pointer`}
+                className={`${SOFT_BTN} inline-flex items-center gap-1.5 px-6 py-2.5 rounded-full text-white text-base font-bold transition-all cursor-pointer active:scale-95`}
+                style={{
+                  background: theme.gradient,
+                  boxShadow: `0 4px 16px ${theme.glow}`,
+                }}
               >
                 <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z" />
@@ -397,6 +415,21 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
                 onNext={handleNext}
                 onSeek={handleSeek}
               />
+
+              {/* Script text display — shows RSS content being read aloud */}
+              {nowPlaying?.description && nowPlaying.segmentType !== 'ambient' && nowPlaying.segmentType !== 'silence' && (
+                <div className="bg-white dark:bg-white/6 rounded-2xl border border-[var(--color-border)] dark:border-white/8 shadow-[0_2px_8px_rgba(0,0,0,0.03)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.15)] p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className={`w-2 h-2 rounded-full ${isVoicePlaying ? 'bg-[#00A651] animate-pulse' : 'bg-[#6B7280]/40'}`} />
+                    <span className="text-xs font-semibold text-[#6B7280] dark:text-[#94A3B8] uppercase tracking-wider">
+                      {isVoicePlaying ? 'On Air' : 'Script Ready'}
+                    </span>
+                  </div>
+                  <p className="text-sm text-[#1A1D23] dark:text-[#F1F5F9] leading-relaxed">
+                    {nowPlaying.description}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -409,7 +442,7 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
           />
 
           {nextSegmentLabel && (
-            <div className="text-center text-sm text-[#555555] dark:text-[#94A3B8]">
+            <div className="text-center text-sm text-[#6B7280] dark:text-[#94A3B8]">
               {nextSegmentLabel}
             </div>
           )}

@@ -19,6 +19,7 @@ export function createChannelState(channelId, stationId, language) {
     version: 1,
     startedAt: null,
     segmentDuration: 0,
+    backgroundUrl: null,
   };
 }
 
@@ -98,23 +99,29 @@ export async function updateState(channelId, newState) {
  * Log a playback event to playback_history — includes source attribution.
  */
 export async function logPlayback(channelId, segment, stationId) {
+  const insertData = {
+    channel_id: channelId,
+    segment_type: segment.segment_type,
+    segment_id: segment.segment_id || null,
+    audio_url: segment.audio_url || null,
+    title: segment.title || null,
+    artist: segment.artist || null,
+    duration_seconds: segment.duration_seconds || 0,
+    started_at: segment.started_at || new Date().toISOString(),
+    // Source attribution
+    provider: segment.provider || null,
+    city: segment.city || null,
+    province: segment.province || null,
+  };
+
+  // Only include station_id if it's a valid UUID
+  if (stationId) {
+    insertData.station_id = stationId;
+  }
+
   const { error } = await supabase
     .from('playback_history')
-    .insert({
-      channel_id: channelId,
-      station_id: stationId || null,
-      segment_type: segment.segment_type,
-      segment_id: segment.segment_id || null,
-      audio_url: segment.audio_url || null,
-      title: segment.title || null,
-      artist: segment.artist || null,
-      duration_seconds: segment.duration_seconds || 0,
-      started_at: segment.started_at || new Date().toISOString(),
-      // Source attribution
-      provider: segment.provider || null,
-      city: segment.city || null,
-      province: segment.province || null,
-    });
+    .insert(insertData);
 
   if (error && error.code !== '23505') {
     console.error(`[${new Date().toISOString()}] [playbackController] Failed to log playback:`, error.message);

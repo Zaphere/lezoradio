@@ -1,5 +1,4 @@
-const BG_URL =
-  `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/introaudio/backgroundmusic.mp3`;
+const BG_URL = '/api/content/storage?bucket=introaudio&file=backgroundmusic.mp3';
 
 const DEFAULT_VOLUME = 0.12;
 const FADE_MS = 900;

@@ -1,13 +1,8 @@
-import { createClient } from '@supabase/supabase-js';
+import { pool } from './supabaseClient.js';
 import dotenv from 'dotenv';
-import ws from 'ws';
 import RSSProvider from './providers/rss/rssProvider.js';
 import { validateEvent } from './providers/validator.js';
 dotenv.config();
-
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
-  realtime: { transport: ws },
-});
 
 async function debugRssSync() {
   console.log('Debugging RSS Provider sync...');
@@ -25,13 +20,18 @@ async function debugRssSync() {
     const firstEvent = result.events[0];
     console.log('First event:', JSON.stringify(firstEvent, null, 2));
     
-    // Now let's try to insert it using supabase client directly to see the exact error
-    const { data, error } = await supabase.from('events').insert(firstEvent).select();
-    if (error) {
+    // Now let's try to insert it using pool directly to see the exact error
+    const cols = Object.keys(firstEvent);
+    const vals = Object.values(firstEvent);
+    const placeholders = cols.map((_, i) => `$${i + 1}`);
+    const insertQuery = `INSERT INTO events (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`;
+    
+    try {
+      const { rows } = await pool.query(insertQuery, vals);
+      console.log('Successfully inserted first event. ID:', rows[0].id);
+      await pool.query('DELETE FROM events WHERE id = $1', [rows[0].id]);
+    } catch (error) {
       console.error('Error inserting first event:', error);
-    } else {
-      console.log('Successfully inserted first event. ID:', data[0].id);
-      await supabase.from('events').delete().eq('id', data[0].id);
     }
   }
 }

@@ -28,7 +28,7 @@ export default function RadioControlsSheet({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-4 right-4 z-50 w-12 h-12 rounded-full bg-white shadow-[0_8px_24px_rgba(0,0,0,0.15)] hover:shadow-[0_12px_32px_rgba(0,0,0,0.2)] flex items-center justify-center text-[#555555] dark:text-[#94A3B8] hover:text-[#00A651] transition-all active:scale-95 touch-manipulation dark:bg-white/10"
+        className="fixed bottom-4 right-4 z-50 w-12 h-12 rounded-full bg-white dark:bg-white/8 border border-[var(--color-border)] dark:border-white/10 shadow-[0_4px_16px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.12)] flex items-center justify-center text-[#6B7280] dark:text-[#94A3B8] hover:text-[#00A651] transition-all active:scale-95 touch-manipulation"
         aria-label="Open radio controls"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -44,14 +44,14 @@ export default function RadioControlsSheet({
             aria-label="Close controls"
             onClick={() => setOpen(false)}
           />
-          <div className="relative w-full max-w-lg bg-white dark:bg-[#1A1A1E] rounded-t-3xl p-5 pb-7 space-y-4 shadow-[0_-8px_32px_rgba(0,0,0,0.12)] animate-slide-up">
-            <div className="w-10 h-1.5 rounded-full bg-[#DDDDDD] dark:bg-white/20 mx-auto mb-2" />
+          <div className="relative w-full max-w-lg bg-white dark:bg-[#1A1A1E] rounded-t-3xl p-5 pb-7 space-y-4 shadow-[0_-8px_32px_rgba(0,0,0,0.12)] animate-slide-up border-t border-[var(--color-border)] dark:border-white/10">
+            <div className="w-10 h-1.5 rounded-full bg-[var(--color-surface-subtle)] dark:bg-white/15 mx-auto mb-2" />
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-[#111111] dark:text-[#F1F5F9]">Radio Controls</h3>
+              <h3 className="text-base font-semibold text-[#1A1D23] dark:text-[#F1F5F9]">Radio Controls</h3>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="p-1.5 rounded-full text-[#555555] dark:text-[#94A3B8] hover:text-[#00A651] hover:bg-[#00A651]/10 transition-all"
+                className="p-1.5 rounded-full text-[#6B7280] dark:text-[#94A3B8] hover:text-[#00A651] hover:bg-[#00A651]/10 transition-all"
                 aria-label="Close"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -60,18 +60,18 @@ export default function RadioControlsSheet({
               </button>
             </div>
 
-            <div className="flex items-center justify-between py-3 px-4 rounded-2xl bg-[#F8F8F8] dark:bg-white/5">
-              <span className="text-sm text-[#555555] dark:text-[#94A3B8] font-medium">Local time</span>
+            <div className="flex items-center justify-between py-3 px-4 rounded-2xl bg-[var(--color-surface-subtle)] dark:bg-white/5">
+              <span className="text-sm text-[#6B7280] dark:text-[#94A3B8] font-medium">Local time</span>
               <StationClock timeInfo={timeInfo} />
             </div>
 
-            <div className="flex items-center justify-between py-3 px-4 rounded-2xl bg-[#F8F8F8] dark:bg-white/5">
-              <span className="text-sm text-[#555555] dark:text-[#94A3B8] font-medium">Theme</span>
+            <div className="flex items-center justify-between py-3 px-4 rounded-2xl bg-[var(--color-surface-subtle)] dark:bg-white/5">
+              <span className="text-sm text-[#6B7280] dark:text-[#94A3B8] font-medium">Theme</span>
               <ThemeToggle />
             </div>
 
-            <div className="py-3 px-4 rounded-2xl bg-[#F8F8F8] dark:bg-white/5">
-              <span className="text-sm text-[#555555] dark:text-[#94A3B8] font-medium block mb-2">Volume</span>
+            <div className="py-3 px-4 rounded-2xl bg-[var(--color-surface-subtle)] dark:bg-white/5">
+              <span className="text-sm text-[#6B7280] dark:text-[#94A3B8] font-medium block mb-2">Volume</span>
               <VolumeControl volume={volume} onChange={onVolumeChange} />
             </div>
 
@@ -86,8 +86,8 @@ export default function RadioControlsSheet({
               </button>
             )}
 
-            <div className="flex items-center justify-center gap-2 text-sm text-[#555555] dark:text-[#94A3B8]">
-              <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-[#D62828] animate-pulse' : 'bg-[#555555]/40'}`} />
+            <div className="flex items-center justify-center gap-2 text-sm text-[#6B7280] dark:text-[#94A3B8]">
+              <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-[#D62828] animate-pulse' : 'bg-[#6B7280]/40'}`} />
               {isLive ? 'Broadcasting live' : 'Stand by'}
             </div>
           </div>

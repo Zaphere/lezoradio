@@ -1,6 +1,7 @@
 // @deprecated — archived in Phase 1 (2026-07-14). Config values now in database tables. See docs/DATABASE_ARCHITECTURE.md.
-const STORAGE_BASE =
-  `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/introaudio`;
+function storageUrl(file: string): string {
+  return `/api/content/storage?bucket=introaudio&file=${encodeURIComponent(file)}`;
+}
 
 export interface EntertainmentTrack {
   id: string;
@@ -13,19 +14,19 @@ export const ENTERTAINMENT_TRACKS: EntertainmentTrack[] = [
   {
     id: 'kumbaya',
     title: 'Kumbaya',
-    url: `${STORAGE_BASE}/Kumbaya.mp3`,
+    url: storageUrl('Kumbaya.mp3'),
     mood: 'reflective and communal',
   },
   {
     id: 'familia',
     title: 'Familia',
-    url: `${STORAGE_BASE}/Familia.mp3`,
+    url: storageUrl('Familia.mp3'),
     mood: 'warm and uplifting',
   },
   {
     id: 'kumbaya-encore',
     title: 'Kumbaya',
-    url: `${STORAGE_BASE}/Kumbaya.mp3`,
+    url: storageUrl('Kumbaya.mp3'),
     mood: 'peaceful and heartfelt',
   },
 ];

@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { NowPlaying } from '../lib/types';
-import { supabase } from '../lib/supabase';
 
 function mapRow(row: Record<string, unknown>): NowPlaying {
   return {
@@ -34,6 +33,7 @@ function mapRow(row: Record<string, unknown>): NowPlaying {
     city: (row.city as string) ?? null,
     province: (row.province as string) ?? null,
     description: (row.description as string) ?? null,
+    backgroundAudioUrl: (row.background_audio_url as string) ?? null,
   };
 }
 
@@ -55,53 +55,26 @@ export function useNowPlaying({ channelId, enabled = true }: UseNowPlayingOption
   const [error, setError] = useState<string | null>(null);
   const versionRef = useRef(0);
 
-  const fetchInitial = useCallback(async () => {
+  const fetchState = useCallback(async () => {
     if (!enabled || !channelId) return;
     try {
-      let data: Record<string, unknown> | null = null;
+      const res = await fetch(`/api/content/now-playing?channel_id=${encodeURIComponent(channelId)}`);
+      if (!res.ok) return;
 
-      // Try backend proxy first (bypasses RLS via service-role key)
-      try {
-        const res = await fetch(`/api/content/now-playing?channel_id=${encodeURIComponent(channelId)}`);
-        if (res.ok) {
-          const json = await res.json();
-          if (json && typeof json === 'object' && 'channel_id' in json) {
-            data = json;
-          }
-        }
-      } catch {
-        // Proxy unavailable, fall back to direct Supabase
-      }
-
-      // Fallback: direct Supabase query
-      if (!data) {
-        const { data: directData, error: fetchErr } = await supabase
-          .from('radio_station_state')
-          .select('*')
-          .eq('channel_id', channelId)
-          .maybeSingle();
-
-        if (fetchErr) {
-          console.warn('[useNowPlaying] Initial fetch error:', fetchErr.message);
-          setError(fetchErr.message);
-          return;
-        }
-        data = directData;
-      }
-
-      if (!data) {
-        return;
-      }
+      const data = await res.json();
+      if (!data || typeof data !== 'object' || !('channel_id' in data)) return;
 
       const mapped = mapRow(data);
+      // Always update if version changes
       if (mapped.version > versionRef.current) {
         versionRef.current = mapped.version;
         setNowPlaying(mapped);
         setError(null);
+        setIsConnected(true);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to fetch initial state';
-      console.warn('[useNowPlaying] Initial fetch exception:', msg);
+      const msg = err instanceof Error ? err.message : 'Failed to fetch now-playing state';
+      console.warn('[useNowPlaying] Fetch error:', msg);
       setError(msg);
     }
   }, [channelId, enabled]);
@@ -113,57 +86,15 @@ export function useNowPlaying({ channelId, enabled = true }: UseNowPlayingOption
       return;
     }
 
-    fetchInitial();
+    fetchState();
 
-    // Retry initial fetch every 10s if no data yet (handles case where table exists but has no rows)
-    const retryInterval = setInterval(() => {
-      if (versionRef.current === 0) {
-        fetchInitial();
-      }
-    }, 10000);
-
-    const channel = supabase
-      .channel(`now-playing-${channelId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'radio_station_state',
-          filter: `channel_id=eq.${channelId}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'DELETE') {
-            setNowPlaying(null);
-            versionRef.current = 0;
-            return;
-          }
-
-          const row = payload.new as Record<string, unknown>;
-          const mapped = mapRow(row);
-
-          if (mapped.version >= versionRef.current) {
-            versionRef.current = mapped.version;
-            setNowPlaying(mapped);
-            setError(null);
-          }
-        },
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          setIsConnected(true);
-          setError(null);
-        } else if (status === 'CHANNEL_ERROR') {
-          setIsConnected(false);
-          setError('Realtime subscription failed');
-        }
-      });
+    // Poll every 2 seconds for now-playing updates (replaces Supabase Realtime)
+    const pollInterval = setInterval(fetchState, 2000);
 
     return () => {
-      clearInterval(retryInterval);
-      supabase.removeChannel(channel);
+      clearInterval(pollInterval);
     };
-  }, [channelId, enabled, fetchInitial]);
+  }, [channelId, enabled, fetchState]);
 
-  return { nowPlaying, isConnected, error, refetch: fetchInitial };
+  return { nowPlaying, isConnected, error, refetch: fetchState };
 }

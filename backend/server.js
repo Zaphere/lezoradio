@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import http from 'http';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { fetchRSSFeed } from './rssFetcher.js';
@@ -159,7 +160,7 @@ export function createApp() {
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      supabaseConfigured: !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      dbConfigured: !!process.env.DB_HOST,
       configuredFeedCount,
       feedsConfigured: {
         eswatini: !!process.env.RSS_FEEDS_ESWATINI,
@@ -186,6 +187,23 @@ export function createApp() {
     try {
       const region = typeof req.query.region === 'string' ? req.query.region : undefined;
       const category = typeof req.query.category === 'string' ? req.query.category : undefined;
+      const since = typeof req.query.since === 'string' ? req.query.since : undefined;
+
+      if (since) {
+        // Polling endpoint — return items newer than `since`
+        const cutoff = new Date(since);
+        if (isNaN(cutoff.getTime())) {
+          return res.status(400).json({ error: 'Invalid since parameter' });
+        }
+        const { data, error } = await serviceSupabase
+          .from('events')
+          .select('*')
+          .gte('created_at', cutoff.toISOString())
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        return res.json(data || []);
+      }
+
       const items = await getNewsContent(region, category);
       res.json(items);
     } catch (err) {
@@ -194,24 +212,43 @@ export function createApp() {
     }
   });
 
-  // Storage proxy — serves Supabase Storage files through the same origin to avoid CORS
+  // Storage proxy — serves local files from the storage directory
+  const LOCAL_STORAGE_DIR = path.resolve(__dirname, '..', 'storage');
+
   app.get('/api/content/storage', async (req, res) => {
     try {
       const file = typeof req.query.file === 'string' ? req.query.file : '';
       const bucket = typeof req.query.bucket === 'string' ? req.query.bucket : 'tts-audio';
+      const dir = typeof req.query.dir === 'string' ? req.query.dir : bucket;
       if (!file) return res.status(400).json({ error: 'Missing file parameter' });
 
-      const { data: urlData } = serviceSupabase.storage.from(bucket).getPublicUrl(file);
-      const publicUrl = urlData?.publicUrl;
-      if (!publicUrl) return res.status(404).json({ error: 'File not found' });
+      // Try local file first — check both dir and bucket subdirectories
+      const candidates = [
+        path.join(LOCAL_STORAGE_DIR, dir, file),
+        path.join(LOCAL_STORAGE_DIR, bucket, file),
+      ];
+      for (const localPath of candidates) {
+        if (fs.existsSync(localPath)) {
+          const ext = path.extname(file).toLowerCase();
+          const mimeTypes = {
+            '.mp3': 'audio/mpeg',
+            '.wav': 'audio/wav',
+            '.ogg': 'audio/ogg',
+            '.m4a': 'audio/mp4',
+            '.aac': 'audio/aac',
+            '.flac': 'audio/flac',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+          };
+          res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+          return fs.createReadStream(localPath).pipe(res);
+        }
+      }
 
-      const fetchRes = await fetch(publicUrl);
-      if (!fetchRes.ok) return res.status(fetchRes.status).json({ error: 'Upstream fetch failed' });
-
-      const arrayBuf = await fetchRes.arrayBuffer();
-      res.setHeader('Content-Type', 'audio/mpeg');
-      res.setHeader('Cache-Control', 'public, max-age=3600');
-      res.send(Buffer.from(arrayBuf));
+      return res.status(404).json({ error: 'File not found' });
     } catch (err) {
       console.error('Failed to proxy storage file:', err);
       res.status(500).json({ error: err.message || 'Failed to fetch file' });
@@ -250,8 +287,21 @@ export function createApp() {
         .maybeSingle();
 
       if (error) throw error;
-      console.log(`[now-playing] channel_id=${channelId} → ${data ? 'FOUND (type=' + data.segment_type + ', title=' + (data.title || '').substring(0, 40) + ')' : 'NULL'}`);
-      res.json(data || null);
+
+      let payload = data || null;
+      try {
+        const { getEngine } = await import('./engine/radioEngine.js');
+        const engine = getEngine();
+        const bed = engine?.channels?.get(channelId)?.backgroundUrl;
+        if (payload && bed) {
+          payload = { ...payload, background_audio_url: bed };
+        }
+      } catch {
+        // Engine not loaded yet — return DB row as-is
+      }
+
+      console.log(`[now-playing] channel_id=${channelId} → ${payload ? 'FOUND (type=' + payload.segment_type + ', title=' + (payload.title || '').substring(0, 40) + ')' : 'NULL'}`);
+      res.json(payload);
     } catch (err) {
       console.error('Failed to load now-playing state:', err);
       res.status(500).json({ error: err.message || 'Failed to load now-playing state' });
@@ -604,6 +654,232 @@ export function createApp() {
     } catch (err) {
       console.error('Failed to get aggregated health:', err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Frontend Data API Endpoints ─────────────────────────────────────────
+
+  // Radio scripts
+  app.get('/api/content/radio-scripts', async (req, res) => {
+    try {
+      const region = typeof req.query.region === 'string' ? req.query.region : undefined;
+      const category = typeof req.query.category === 'string' ? req.query.category : undefined;
+      let q = serviceSupabase
+        .from('radio_scripts')
+        .select('*')
+        .eq('is_read', false)
+        .gte('created_at', retentionCutoff())
+        .order('created_at', { ascending: true })
+        .limit(50);
+      if (region) q = q.eq('region', region);
+      if (category) q = q.eq('category', category);
+      const { data, error } = await q;
+      if (error) throw error;
+      res.json((data || []).map(row => ({ ...row, script: row.script || row.script_text || '' })));
+    } catch (err) {
+      console.error('Failed to load radio scripts:', err);
+      res.status(500).json({ error: err.message || 'Failed to load radio scripts' });
+    }
+  });
+
+  // Broadcast queue
+  app.get('/api/content/broadcast-queue', async (req, res) => {
+    try {
+      const region = typeof req.query.region === 'string' ? req.query.region : undefined;
+      let q = serviceSupabase
+        .from('broadcast_queue')
+        .select('*')
+        .eq('is_played', false)
+        .order('priority', { ascending: true })
+        .order('created_at', { ascending: true });
+      if (region) q = q.eq('region', region);
+      const { data, error } = await q;
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err) {
+      console.error('Failed to load broadcast queue:', err);
+      res.status(500).json({ error: err.message || 'Failed to load broadcast queue' });
+    }
+  });
+
+  // Alerts
+  app.get('/api/content/alerts', async (req, res) => {
+    try {
+      const region = typeof req.query.region === 'string' ? req.query.region : undefined;
+      let q = serviceSupabase
+        .from('alerts')
+        .select('*')
+        .eq('is_active', true)
+        .gte('created_at', retentionCutoff())
+        .order('created_at', { ascending: false });
+      if (region) q = q.eq('region', region);
+      const { data, error } = await q;
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err) {
+      console.error('Failed to load alerts:', err);
+      res.status(500).json({ error: err.message || 'Failed to load alerts' });
+    }
+  });
+
+  // Feeds
+  app.get('/api/content/feeds', async (_req, res) => {
+    try {
+      const { data, error } = await serviceSupabase
+        .from('feeds')
+        .select('*')
+        .order('name', { ascending: true });
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err) {
+      console.error('Failed to load feeds:', err);
+      res.status(500).json({ error: err.message || 'Failed to load feeds' });
+    }
+  });
+
+  // Content sources
+  app.get('/api/content/sources', async (_req, res) => {
+    try {
+      const { data, error } = await serviceSupabase
+        .from('content_sources')
+        .select('*')
+        .eq('enabled', true)
+        .order('priority');
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err) {
+      console.error('Failed to load content sources:', err);
+      res.status(500).json({ error: err.message || 'Failed to load content sources' });
+    }
+  });
+
+  // TTS cache check — for browser TTS to check before calling ElevenLabs
+  app.get('/api/tts/cache-check', async (req, res) => {
+    try {
+      const { text, voice_id, language } = req.query;
+      if (!text || !voice_id || !language) {
+        return res.json({ cached: false });
+      }
+
+      const crypto = await import('crypto');
+      const hash = crypto.default.createHash('sha256').update(`${text}:${voice_id}:${language}`).digest('hex');
+
+      const { data, error } = await serviceSupabase
+        .from('tts_audio_cache')
+        .select('audio_url')
+        .eq('text_hash', hash)
+        .eq('voice_id', voice_id)
+        .eq('language', language)
+        .single();
+
+      if (error || !data) {
+        return res.json({ cached: false });
+      }
+
+      // Verify file exists on disk
+      const fs = await import('fs');
+      const path = await import('path');
+      const audioPath = path.default.join(process.cwd(), 'storage', 'tts-audio', `${hash}.mp3`);
+      if (!fs.default.existsSync(audioPath)) {
+        return res.json({ cached: false });
+      }
+
+      res.json({ cached: true, audioUrl: data.audio_url });
+    } catch (err) {
+      res.json({ cached: false });
+    }
+  });
+
+  // Station sources (with join)
+  app.get('/api/content/station-sources', async (req, res) => {
+    try {
+      const stationId = typeof req.query.station_id === 'string' ? req.query.station_id : undefined;
+      if (!stationId) return res.json([]);
+      const { data, error } = await serviceSupabase
+        .from('station_sources')
+        .select('priority, content_sources(*)')
+        .eq('station_id', stationId)
+        .eq('enabled', true)
+        .order('priority');
+      if (error) throw error;
+      const results = [];
+      for (const row of data || []) {
+        const joined = row.content_sources;
+        const source = (Array.isArray(joined) ? joined[0] : joined);
+        if (source) results.push({ ...source, priority: row.priority ?? source.priority });
+      }
+      res.json(results);
+    } catch (err) {
+      console.error('Failed to load station sources:', err);
+      res.status(500).json({ error: err.message || 'Failed to load station sources' });
+    }
+  });
+
+  // Station by ID
+  app.get('/api/content/stations/:id', async (req, res) => {
+    try {
+      const { data, error } = await serviceSupabase
+        .from('stations')
+        .select('*')
+        .eq('id', req.params.id)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return res.status(404).json({ error: 'Station not found' });
+      res.json(data);
+    } catch (err) {
+      console.error('Failed to load station:', err);
+      res.status(500).json({ error: err.message || 'Failed to load station' });
+    }
+  });
+
+  // Mark news item as processed
+  app.post('/api/content/mark-processed', async (req, res) => {
+    try {
+      const { id } = req.body;
+      if (!id) return res.status(400).json({ error: 'Missing id' });
+      const { error } = await serviceSupabase
+        .from('events')
+        .update({ status: 'processed' })
+        .eq('id', id);
+      if (error) throw error;
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('Failed to mark processed:', err);
+      res.status(500).json({ error: err.message || 'Failed to mark processed' });
+    }
+  });
+
+  // Mark script as read
+  app.post('/api/content/mark-script-read', async (req, res) => {
+    try {
+      const { id } = req.body;
+      if (!id) return res.status(400).json({ error: 'Missing id' });
+      const { error } = await serviceSupabase
+        .from('radio_scripts')
+        .update({ is_read: true })
+        .eq('id', id);
+      if (error) throw error;
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('Failed to mark script read:', err);
+      res.status(500).json({ error: err.message || 'Failed to mark script read' });
+    }
+  });
+
+  // Update source health
+  app.post('/api/content/source-health', async (req, res) => {
+    try {
+      const { id, ...data } = req.body;
+      if (!id) return res.status(400).json({ error: 'Missing id' });
+      const { error } = await serviceSupabase
+        .from('content_sources')
+        .update({ ...data, updated_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) throw error;
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('Failed to update source health:', err);
+      res.status(500).json({ error: err.message || 'Failed to update source health' });
     }
   });
 

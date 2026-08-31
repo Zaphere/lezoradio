@@ -31,7 +31,7 @@ export const PRIORITY_ORDER = {
   ENTERTAINMENT_MUSIC: 8,
 } as const;
 
-export const INTRO_JINGLE_URL = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/introaudio/LezzoTrafficappIntro.mp3`;
+export const INTRO_JINGLE_URL = '/api/content/storage?bucket=introaudio&file=LezzoTrafficappIntro.mp3';
 
 export const FRENCH_BULLETIN_INTRO_SCRIPT = `Bulletin d'information en français. Voici les titres du jour.`;
 

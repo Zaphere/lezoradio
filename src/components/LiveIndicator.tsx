@@ -11,7 +11,7 @@ export default function LiveIndicator({ isLive }: Props) {
         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#D62828] opacity-75" />
         <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-[#D62828]" />
       </span>
-      <span className="text-base font-bold text-[#D62828] tracking-wider">LIVE</span>
+      <span className="text-sm font-bold text-[#D62828] tracking-wider">LIVE</span>
     </div>
   );
 }

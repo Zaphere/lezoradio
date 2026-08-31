@@ -106,8 +106,11 @@ function extractGeoData(item, region) {
   
   // Map region to country
   const regionCountryMap = {
-    'congo': 'CD',
+    'kinshasa': 'CD',
+    'goma': 'CD',
+    'lubumbashi': 'CD',
     'global': null,
+    'congo': 'CD',
     'eswatini': 'SZ',
     'south-africa': 'ZA',
   };
@@ -201,6 +204,7 @@ function normalizeRSSItem(rssItem, feedConfig) {
     title: rssItem.title || 'Untitled',
     summary: summary || null,
     description: description || null,
+    region: feedConfig.region || 'global',
     country: geoData.country,
     province: geoData.province,
     city: geoData.city,

@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as db from '../lib/supabase';
 import type { NewsItem, RadioScript, BroadcastQueueItem, Alert, NewsCategory } from '../lib/types';
-import { supabase } from '../lib/supabase';
 
 function mapRows<T>(data: any[]): T[] {
   return (data || []) as T[];
@@ -81,13 +80,28 @@ export function useFeeds() {
 
 export function useRealtimeSubscription(table: string, onInsert: (payload: any) => void) {
   useEffect(() => {
-    const channel = supabase
-      .channel(`${table}-changes`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table }, (payload) => {
-        onInsert(payload.new);
-      })
-      .subscribe();
+    // Poll for new inserts every 10 seconds (replaces Supabase Realtime)
+    let lastCheck = new Date().toISOString();
 
-    return () => { supabase.removeChannel(channel); };
+    const poll = async () => {
+      try {
+        const now = new Date().toISOString();
+        // Use the generic news endpoint as a fallback — filters by created_at > lastCheck
+        // For production, each table should have its own polling endpoint
+        const res = await fetch(`/api/content/news?since=${encodeURIComponent(lastCheck)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            data.forEach((row: any) => onInsert(row));
+          }
+        }
+        lastCheck = now;
+      } catch {
+        // ignore polling errors
+      }
+    };
+
+    const interval = setInterval(poll, 10000);
+    return () => clearInterval(interval);
   }, [table, onInsert]);
 }

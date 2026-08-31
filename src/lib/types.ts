@@ -198,6 +198,7 @@ export interface NowPlaying {
   city: string | null;
   province: string | null;
   description: string | null;
+  backgroundAudioUrl?: string | null;
 }
 
 export type FeedHealth = 'healthy' | 'warning' | 'offline' | 'unknown';

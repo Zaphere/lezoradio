@@ -1,14 +1,32 @@
 // backend/engine/queueManager.js
 // Queue generation from events and music_tracks, with provider/category priority.
+// REGION-AWARE: Events are filtered by channel region before serving.
 
 import { supabase } from '../supabaseClient.js';
 import { computeEffectivePriority } from './constants.js';
+import * as stationController from './stationController.js';
 
 /**
- * Get unplayed events for a channel, prioritized by provider + category.
+ * Build the region filter for a channel's content queries.
+ * A regional channel plays content from its own region PLUS global content.
+ * The global channel plays everything.
+ * @param {string|null} channelRegion
+ * @returns {object|null} { op: 'eq'|'in', region: string|string[] } or null for no filter
+ */
+function regionFilter(channelRegion) {
+  if (!channelRegion || channelRegion === 'global') return null;
+  return { op: 'in', region: [channelRegion, 'global'] };
+}
+
+/**
+ * Get unplayed events for a channel, filtered by region.
  * LezoTraffic traffic events always outrank normal RSS/news content.
  */
 export async function getUnplayedEvents(channelId, limit = 10) {
+  // Get channel region for filtering
+  const channel = stationController.getChannel(channelId);
+  const channelRegion = channel?.region || null;
+
   // Fetch active events not yet played for this channel
   const { data: playedIds } = await supabase
     .from('queue_played_items')
@@ -18,12 +36,20 @@ export async function getUnplayedEvents(channelId, limit = 10) {
 
   const playedSet = new Set((playedIds || []).map(r => r.item_id));
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('events')
-    .select('id, provider, category, subcategory, priority, title, summary, description, city, province, country, occurred_at, created_at, status')
+    .select('id, provider, category, subcategory, priority, title, summary, description, city, province, country, region, language, occurred_at, created_at, status')
     .eq('status', 'active')
     .neq('category', 'geo')
-    .gte('created_at', new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString())
+    .gte('created_at', new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString());
+
+  // Filter by region if channel has one (global channel gets all)
+  const rf = regionFilter(channelRegion);
+  if (rf) {
+    query = query.in('region', rf.region);
+  }
+
+  const { data, error } = await query
     .order('created_at', { ascending: false })
     .limit(100);
 
@@ -106,6 +132,8 @@ export async function getUnplayedTrack(channelId) {
   // Random selection from pool
   const track = pool[Math.floor(Math.random() * pool.length)];
   track.duration_seconds = Math.round((track.duration_ms || 180000) / 1000);
+  // DB tracks are real songs (music/entertainment_tracks) — play in full as foreground
+  track.isBackground = false;
   return track;
 }
 
@@ -118,8 +146,12 @@ export async function markPlayed(channelId, itemType, itemId, stationId = null, 
     channel_id: channelId,
     item_type: itemType,
     item_id: itemId,
-    station_id: stationId || null,
   };
+
+  // Only include station_id if it's a valid UUID
+  if (stationId) {
+    insertData.station_id = stationId;
+  }
 
   const { error } = await supabase
     .from('queue_played_items')
@@ -141,23 +173,9 @@ export async function markPlayed(channelId, itemType, itemId, stationId = null, 
     });
   }
 
-  // Update source row so UI shows "completed" state
-  if (itemType === 'event') {
-    // Try events table first
-    const { count } = await supabase
-      .from('events')
-      .update({ status: 'played' })
-      .eq('id', itemId)
-      .select('id', { count: 'exact', head: true });
-
-    // If no rows updated, try news_items (normalized events from news_items table)
-    if (count === 0) {
-      await supabase
-        .from('news_items')
-        .update({ is_processed: true })
-        .eq('id', itemId);
-    }
-  }
+  // Per-channel dedup is handled by queue_played_items above.
+  // No need to update source tables — the events/news_items status columns
+  // are not used for playback decisions.
 }
 
 /**
@@ -202,6 +220,15 @@ export async function getNextContent(channelId, language = 'fr', maxEvents = 3, 
   // If forced music rotation, skip content entirely
   if (forceMusic) {
     console.log(`[queueManager] ${channelId}: forced music rotation`);
+    const song = await getNextEntertainmentTrack(channelId);
+    if (song) {
+      return {
+        type: 'music',
+        events: [],
+        musicTrack: song,
+        transitionText: null,
+      };
+    }
     const nextTrack = await getNextBackgroundTrack(channelId);
     return {
       type: 'music',
@@ -262,18 +289,28 @@ export async function getNextContent(channelId, language = 'fr', maxEvents = 3, 
 }
 
 /**
- * Get unplayed events filtered by provider.
- * Optionally filters by language match (interim fix until translation pipeline).
+ * Get unplayed events filtered by provider and region.
  */
 async function getUnplayedEventsByProvider(channelId, provider, limit = 3, language = null) {
+  const channel = stationController.getChannel(channelId);
+  const channelRegion = channel?.region || null;
   const playedSet = await getPlayedEventIds(channelId);
-  const { data, error } = await supabase
+
+  let query = supabase
     .from('events')
-    .select('id, title, summary, provider, category, subcategory, city, province, country, priority, language, occurred_at, created_at')
+    .select('id, title, summary, provider, category, subcategory, city, province, country, region, priority, language, occurred_at, created_at')
     .eq('status', 'active')
     .eq('provider', provider)
     .neq('category', 'geo')
-    .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+    .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+
+  // Filter by region if channel has one (global channel gets all)
+  const rf = regionFilter(channelRegion);
+  if (rf) {
+    query = query.in('region', rf.region);
+  }
+
+  const { data, error } = await query
     .order('created_at', { ascending: false })
     .limit(50);
 
@@ -283,28 +320,32 @@ async function getUnplayedEventsByProvider(channelId, provider, limit = 3, langu
   }
 
   let unplayed = (data || []).filter(e => !playedSet.has(e.id));
-
-  // Filter by language match (skip foreign-language items until translation exists)
-  if (language) {
-    unplayed = unplayed.filter(e => !e.language || e.language === language);
-  }
-
   return unplayed.slice(0, limit);
 }
 
 /**
- * Get unplayed events filtered by category array.
+ * Get unplayed events filtered by category array and region.
  * Falls back to news_items table if events table is empty.
- * Optionally filters by language match (interim fix until translation pipeline).
  */
 async function getUnplayedEventsByCategory(channelId, categories, limit = 3, language = null) {
+  const channel = stationController.getChannel(channelId);
+  const channelRegion = channel?.region || null;
   const playedSet = await getPlayedEventIds(channelId);
-  const { data, error } = await supabase
+
+  let query = supabase
     .from('events')
-    .select('id, title, summary, provider, category, subcategory, city, province, country, priority, language, occurred_at, created_at')
+    .select('id, title, summary, provider, category, subcategory, city, province, country, region, priority, language, occurred_at, created_at')
     .eq('status', 'active')
     .in('category', categories)
-    .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+    .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+
+  // Filter by region if channel has one (global channel gets all)
+  const rf = regionFilter(channelRegion);
+  if (rf) {
+    query = query.in('region', rf.region);
+  }
+
+  const { data, error } = await query
     .order('created_at', { ascending: false })
     .limit(50);
 
@@ -314,11 +355,6 @@ async function getUnplayedEventsByCategory(channelId, categories, limit = 3, lan
   }
 
   let unplayed = (data || []).filter(e => !playedSet.has(e.id));
-
-  // Filter by language match (skip foreign-language items until translation exists)
-  if (language) {
-    unplayed = unplayed.filter(e => !e.language || e.language === language);
-  }
 
   if (unplayed.length > 0) return unplayed.slice(0, limit);
 
@@ -332,16 +368,25 @@ async function getUnplayedEventsByCategory(channelId, categories, limit = 3, lan
 /**
  * Get unplayed news from the news_items table (fallback when events table is empty).
  * Normalizes news_items rows to match the events format the engine expects.
- * Note: news_items doesn't have a language column, so language filtering is
- * not applied here — items are returned as-is (language: null matches any).
+ * Filters by channel region when available.
  */
 async function getUnplayedNewsItems(channelId, limit = 3, _language = null) {
+  const channel = stationController.getChannel(channelId);
+  const channelRegion = channel?.region || null;
   const playedSet = await getPlayedEventIds(channelId);
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('news_items')
     .select('id, title, description, content, region, category, published_at, ingested_at')
-    .gte('ingested_at', new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())
+    .gte('ingested_at', new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString());
+
+  // Filter by region if channel has one (global channel gets all)
+  const rf = regionFilter(channelRegion);
+  if (rf) {
+    query = query.in('region', rf.region);
+  }
+
+  const { data, error } = await query
     .order('ingested_at', { ascending: false })
     .limit(50);
 
@@ -384,19 +429,65 @@ async function getPlayedEventIds(channelId) {
 }
 
 /**
- * Get the next background music track from the Music bucket or music_tracks table.
+ * Get the next background music track from local storage or music_tracks table.
+ * Background tracks are instrumental beds that loop under TTS voiceovers.
+ * They are ducked (volume reduced) when foreground content plays.
+ *
+ * PRIORITY: Local background-music/ files first (ambient beds).
+ * DB tracks from music_tracks/entertainment_tracks are entertainment songs
+ * and should only be used for entertainment segments (with intros).
  */
 export async function getNextBackgroundTrack(channelId) {
-  // Try music_tracks table first
+  // PRIORITY 1: Local background music files (ambient beds — no announcements)
+  const { getBackgroundMusicTracks, getCurrentEntertainmentMusicUrl } = await import('./constants.js');
+  const bgTracks = await getBackgroundMusicTracks();
+  
+  if (bgTracks && bgTracks.length > 0) {
+    const randomIndex = Math.floor(Math.random() * bgTracks.length);
+    const url = bgTracks[randomIndex];
+    
+    const urlParams = new URL(url, 'http://localhost').searchParams;
+    const fileParam = urlParams.get('file');
+    const dirParam = urlParams.get('dir') || '';
+    const name = fileParam ? decodeURIComponent(fileParam).replace(/\.[^/.]+$/, '') : 'Background Music';
+    
+    console.log(`[queueManager] Background bed: ${name} (dir=${dirParam})`);
+    return { id: null, title: name, audio_url: url, duration_seconds: 180, isBackground: true };
+  }
+
+  // PRIORITY 2: DB tracks (entertainment songs — will get intro announcements)
   const track = await getUnplayedTrack(channelId);
   if (track) return track;
 
-  // Fall back to Music bucket scanning (from constants)
-  const { getCurrentEntertainmentMusicUrl } = await import('./constants.js');
+  // Final fallback to default entertainment track
   const url = await getCurrentEntertainmentMusicUrl();
-  // Extract filename from URL, handling query parameters and proxy paths
-  const urlPath = url.split('?')[0];
-  const rawName = decodeURIComponent(urlPath.substring(urlPath.lastIndexOf('/') + 1));
-  const name = rawName.replace(/\.[^/.]+$/, '');
-  return { id: null, title: name, audio_url: url, duration_seconds: 180 };
+  const urlParams = new URL(url, 'http://localhost').searchParams;
+  const fileParam = urlParams.get('file');
+  const name = fileParam ? decodeURIComponent(fileParam).replace(/\.[^/.]+$/, '') : 'Background Music';
+  return { id: null, title: name, audio_url: url, duration_seconds: 180, isBackground: true };
+}
+
+/**
+ * Next announced song (storage/songs or music_tracks) — not the looping bed.
+ */
+export async function getNextEntertainmentTrack(channelId) {
+  const { getEntertainmentSongUrls } = await import('./constants.js');
+  const songs = await getEntertainmentSongUrls();
+
+  if (songs && songs.length > 0) {
+    const url = songs[Math.floor(Math.random() * songs.length)];
+    const urlParams = new URL(url, 'http://localhost').searchParams;
+    const fileParam = urlParams.get('file');
+    const name = fileParam ? decodeURIComponent(fileParam).replace(/\.[^/.]+$/, '') : 'Music';
+    console.log(`[queueManager] Entertainment song: ${name}`);
+    return { id: null, title: name, audio_url: url, duration_seconds: 180, isBackground: false };
+  }
+
+  const dbTrack = await getUnplayedTrack(channelId);
+  if (dbTrack) {
+    dbTrack.isBackground = false;
+    return dbTrack;
+  }
+
+  return null;
 }

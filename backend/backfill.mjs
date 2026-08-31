@@ -1,11 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
-import ws from 'ws';
-import dotenv from 'dotenv';
-dotenv.config();
+import { pool } from './supabaseClient.js';
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { realtime: { transport: ws } });
-
-// Latest convertToRadioScript with French support
 function convertToRadioScript(item, region) {
   let script = '';
   const isDrc = (region || item?.region) === 'congo';
@@ -36,49 +30,41 @@ function convertToRadioScript(item, region) {
   return trimmed;
 }
 
-// Get all news items with region 'congo' that DON'T have a radio script
-const { data: newsItems, error: newsError } = await supabase
-  .from('news_items')
-  .select('id, title, description, content, region, category')
-  .eq('region', 'congo')
-  .order('ingested_at', { ascending: false });
+const { rows: newsItems, rowCount } = await pool.query(
+  `SELECT id, title, description, content, region, category
+   FROM news_items
+   WHERE region = $1
+   ORDER BY ingested_at DESC`,
+  ['congo']
+);
 
-if (newsError) {
-  console.error('Error fetching news items:', newsError.message);
+if (!newsItems) {
+  console.error('Error fetching news items');
   process.exit(1);
 }
 
-console.log(`Found ${newsItems.length} DRC news items`);
+console.log(`Found ${rowCount} DRC news items`);
 
 let created = 0;
 let skipped = 0;
 
 for (const item of newsItems) {
-  // Check if script already exists
-  const { data: existing } = await supabase
-    .from('radio_scripts')
-    .select('id')
-    .eq('news_item_id', item.id)
-    .maybeSingle();
+  const { rows: existing } = await pool.query(
+    'SELECT id FROM radio_scripts WHERE news_item_id = $1 LIMIT 1',
+    [item.id]
+  );
 
-  if (existing) {
+  if (existing.length > 0) {
     skipped++;
     continue;
   }
 
   const scriptText = convertToRadioScript(item, 'congo');
-  const { error } = await supabase
-    .from('radio_scripts')
-    .insert({
-      news_item_id: item.id,
-      script: scriptText,
-      script_text: scriptText,
-      type: 'news',
-      region: item.region || 'congo',
-      category: item.category || 'general',
-      is_read: false,
-      created_at: new Date().toISOString()
-    });
+  const { error } = await pool.query(
+    `INSERT INTO radio_scripts (news_item_id, script, script_text, type, region, category, is_read, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [item.id, scriptText, scriptText, 'news', item.region || 'congo', item.category || 'general', false, new Date().toISOString()]
+  );
 
   if (error) {
     console.error(`Failed to create script for ${item.id}:`, error.message);

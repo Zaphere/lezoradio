@@ -97,22 +97,22 @@ export function computeMixParams(segmentType, options = {}) {
 
   const params = {
     introCuePercent: cfg.INTRO_CUE_PERCENT || 0.85,
-    introDuckDuration: cfg.INTRO_DUCK_DURATION || 2000,
-    hostFadeInDuration: cfg.HOST_FADE_IN_DURATION || 800,
-    hostDelayAfterDuck: cfg.HOST_DELAY_AFTER_DUCK || 400,
-    backgroundFadeIn: cfg.BACKGROUND_FADE_IN || 1500,
-    backgroundFadeOut: cfg.BACKGROUND_FADE_OUT || 1500,
-    outroFadeDuration: cfg.OUTRO_FADE_DURATION || 2000,
-    stopFadeDuration: cfg.STOP_FADE_DURATION || 1500,
-    transitionGapMs: cfg.TRANSITION_GAP_MS || 800,
-    crossfadeDuration: cfg.CROSSFADE_DURATION || 1000,
-    fadeStepMs: cfg.FADE_STEP_MS || 30,
+    introDuckDuration: cfg.INTRO_DUCK_DURATION || 300,        // Faster ducking
+    hostFadeInDuration: cfg.HOST_FADE_IN_DURATION || 400,     // Faster host fade in
+    hostDelayAfterDuck: cfg.HOST_DELAY_AFTER_DUCK || 200,     // Minimal delay
+    backgroundFadeIn: cfg.BACKGROUND_FADE_IN || 500,         // Much faster fade in
+    backgroundFadeOut: cfg.BACKGROUND_FADE_OUT || 500,         // Much faster fade out
+    outroFadeDuration: cfg.OUTRO_FADE_DURATION || 800,        // Faster outro
+    stopFadeDuration: cfg.STOP_FADE_DURATION || 500,         // Faster stop
+    transitionGapMs: cfg.TRANSITION_GAP_MS || 200,            // Minimal gap
+    crossfadeDuration: cfg.CROSSFADE_DURATION || 500,        // Faster crossfade
+    fadeStepMs: cfg.FADE_STEP_MS || 20,                      // Smoother, faster steps
     fullVolume: cfg.FULL_VOLUME || 1.0,
     backgroundVolume: cfg.BACKGROUND_VOLUME || 0.12,
     duckedBackgroundVolume: cfg.DUCKED_BACKGROUND_VOLUME || 0.06,
-    entertainmentDelayMs: cfg.ENTERTAINMENT_DELAY_MS || 8000,
+    entertainmentDelayMs: cfg.ENTERTAINMENT_DELAY_MS || 3000, // Much shorter delay
     broadcastSegmentMs: cfg.BROADCAST_SEGMENT_MS || 270000,
-    preTrackGapMs: cfg.PRE_TRACK_GAP_MS || 500,
+    preTrackGapMs: cfg.PRE_TRACK_GAP_MS || 0,                 // No gap - immediate transitions
   };
 
   // Override with channel-specific config if provided

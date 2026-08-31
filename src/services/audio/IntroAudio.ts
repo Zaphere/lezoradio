@@ -1,5 +1,4 @@
-const INTRO_URL =
-  `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/introaudio/LezzoTrafficappIntro.mp3`;
+const INTRO_URL = '/api/content/storage?bucket=introaudio&file=LezzoTrafficappIntro.mp3';
 
 /** Speech starts this many seconds before the intro ends (overlap). */
 const SPEECH_OVERLAP_SECONDS = 2.5;

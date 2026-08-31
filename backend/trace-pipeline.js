@@ -2,21 +2,18 @@
  * Full pipeline trace: Insert simulated LezoTraffic event → trace through pipeline
  * Also check for any sync errors from incident endpoints.
  */
-import { createClient } from '@supabase/supabase-js';
+import { pool } from './supabaseClient.js';
 import dotenv from 'dotenv';
-import ws from 'ws';
 
 dotenv.config({ path: 'backend/.env' });
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { realtime: { transport: ws } });
-
 // 1. Check sync logs for errors
 console.log('═══ SYNC LOGS (last 20) ═══');
-const { data: logs } = await supabase
-  .from('provider_sync_logs')
-  .select('*')
-  .order('created_at', { ascending: false })
-  .limit(20);
+const { rows: logs } = await pool.query(
+  `SELECT * FROM provider_sync_logs
+   ORDER BY created_at DESC
+   LIMIT 20`
+);
 
 for (const l of (logs || [])) {
   const errInfo = l.errors ? ` ERRORS: ${l.errors.substring(0, 100)}` : '';
@@ -33,9 +30,9 @@ const testEvent = {
   category: 'traffic',
   subcategory: 'traffic_jam',
   priority: 2,
-  title: 'Embouteillage massif sur l\'avenue Lumumba à Kinshasa',
-  summary: 'Un embouteillage massif bloque l\'avenue Lumumba depuis le carrefour de la gare centrale jusqu\'à l\'échangeur de l\'UNEP. Temps d\'attente estimé: 45 minutes. Évitez la zone.',
-  description: 'Un embouteillage massif bloque l\'avenue Lumumba. Les automobilistes signalent des temps d\'attente de plus de 45 minutes entre le carrefour de la gare centrale et l\'échangeur de l\'UNEP.',
+  title: "Embouteillage massif sur l'avenue Lumumba à Kinshasa",
+  summary: "Un embouteillage massif bloque l'avenue Lumumba depuis le carrefour de la gare centrale jusqu'à l'échangeur de l'UNEP. Temps d'attente estimé: 45 minutes. Évitez la zone.",
+  description: "Un embouteillage massif bloque l'avenue Lumumba. Les automobilistes signalent des temps d'attente de plus de 45 minutes entre le carrefour de la gare centrale et l'échangeur de l'UNEP.",
   country: 'CD',
   province: 'Kinshasa',
   city: 'Kinshasa',
@@ -61,13 +58,16 @@ const testEvent = {
   occurred_at: new Date().toISOString(),
 };
 
-const { data: inserted, error: insertErr } = await supabase
-  .from('events')
-  .insert(testEvent)
-  .select()
-  .single();
+const cols = Object.keys(testEvent);
+const vals = Object.values(testEvent);
+const placeholders = cols.map((_, i) => `$${i + 1}`);
+const insertQuery = `INSERT INTO events (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`;
 
-if (insertErr) {
+let inserted;
+try {
+  const { rows } = await pool.query(insertQuery, vals);
+  inserted = rows[0];
+} catch (insertErr) {
   console.error('Insert failed:', insertErr.message);
   process.exit(1);
 }
@@ -123,15 +123,11 @@ console.log(`\n  ${allPassed ? '🎉 ALL SOURCE ATTRIBUTION FIELDS PRESENT' : '�
 
 // 7. Clean up test event
 console.log('\n═══ CLEANUP ═══');
-const { error: delErr } = await supabase
-  .from('events')
-  .delete()
-  .eq('id', inserted.id);
-
-if (delErr) {
-  console.log(`  ⚠️  Could not delete test event: ${delErr.message}`);
-} else {
+try {
+  await pool.query('DELETE FROM events WHERE id = $1', [inserted.id]);
   console.log(`  ✅ Test event deleted`);
+} catch (delErr) {
+  console.log(`  ⚠️  Could not delete test event: ${delErr.message}`);
 }
 
 console.log('\n═══ Pipeline trace complete ═══');

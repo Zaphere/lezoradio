@@ -180,7 +180,7 @@ export class AudioManager {
     this.onBackgroundEnd = cb;
   }
 
-  startBackground(url: string, options?: { loop?: boolean }): void {
+  startBackground(url: string, options?: { loop?: boolean; volume?: number }): void {
     const existing = this.layers.background;
     if (existing.element) {
       if (existing.state !== 'idle') return;
@@ -188,6 +188,7 @@ export class AudioManager {
     }
 
     const loop = options?.loop ?? false;
+    const targetVolume = options?.volume ?? TIMING.BACKGROUND_VOLUME;
     const audio = new Audio();
     audio.crossOrigin = 'anonymous';
     audio.loop = loop;
@@ -204,7 +205,7 @@ export class AudioManager {
       void audio.play().catch(err => {
         console.error(`[AudioManager] Background play() rejected for URL: ${url}`, `name: ${err.name}`, `message: ${err.message}`);
       });
-      this.fadeTo('background', TIMING.BACKGROUND_VOLUME, TIMING.BACKGROUND_FADE_IN);
+      this.fadeTo('background', targetVolume, TIMING.BACKGROUND_FADE_IN);
     };
 
     existing.element = audio;
@@ -215,8 +216,8 @@ export class AudioManager {
       audio.addEventListener('ended', () => {
         this.layers.background.state = 'idle';
         if (this.onBackgroundEnd) {
-          // Small delay to avoid rapid re-triggering
-          setTimeout(() => this.onBackgroundEnd!(), TIMING.PRE_TRACK_GAP_MS);
+          // Immediate callback for snappy transitions
+          this.onBackgroundEnd!();
         }
       }, { once: true });
     }
@@ -259,10 +260,10 @@ export class AudioManager {
     this.fadeTo('background', TIMING.DUCKED_BACKGROUND_VOLUME, duration);
   }
 
-  restoreBackground(duration = TIMING.BACKGROUND_FADE_IN): void {
+  restoreBackground(duration = TIMING.BACKGROUND_FADE_IN, target = TIMING.BACKGROUND_VOLUME): void {
     const layer = this.layers.background;
     if (!layer.element) return;
-    this.fadeTo('background', TIMING.BACKGROUND_VOLUME, duration);
+    this.fadeTo('background', target, duration);
   }
 
   get isBackgroundPlaying(): boolean {
@@ -295,7 +296,8 @@ export class AudioManager {
       audio.pause();
       audio.currentTime = 0;
       layer.element = null;
-      setTimeout(() => this.onTrackEnd?.(), TIMING.PRE_TRACK_GAP_MS);
+      // Immediate callback for snappy transitions
+      this.onTrackEnd?.();
     };
 
     audio.addEventListener('ended', handleEnded, { once: true });
@@ -333,7 +335,7 @@ export class AudioManager {
     this.clearFade('track');
 
     if (fade && !audio.paused) {
-      this.fadeTo('track', 0, 700, () => {
+      this.fadeTo('track', 0, TIMING.STOP_FADE_DURATION, () => {
         audio.pause();
         audio.currentTime = 0;
         layer.element = null;

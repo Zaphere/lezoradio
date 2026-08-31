@@ -1,22 +1,21 @@
 /**
  * Debug: Check for events with empty provider_record_id
  */
-import { createClient } from '@supabase/supabase-js';
+import { pool } from './supabaseClient.js';
 import dotenv from 'dotenv';
-import ws from 'ws';
 
 dotenv.config({ path: 'backend/.env' });
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { realtime: { transport: ws } });
-
 // Find events with empty/null provider_record_id
 console.log('═══ Events with empty provider_record_id ═══');
-const { data: badEvents } = await supabase
-  .from('events')
-  .select('id, provider, provider_record_id, category, city, title')
-  .eq('provider', 'lezotraffic')
-  .or('provider_record_id.is.null,provider_record_id.eq.')
-  .limit(10);
+const { rows: badEvents } = await pool.query(
+  `SELECT id, provider, provider_record_id, category, city, title
+   FROM events
+   WHERE provider = $1
+     AND (provider_record_id IS NULL OR provider_record_id = '')
+   LIMIT 10`,
+  ['lezotraffic']
+);
 
 if (!badEvents || badEvents.length === 0) {
   console.log('  None found — all events have provider_record_id');
@@ -28,12 +27,13 @@ if (!badEvents || badEvents.length === 0) {
 
 // Check city/province events specifically
 console.log('\n═══ City events sample ═══');
-const { data: cities } = await supabase
-  .from('events')
-  .select('id, provider_record_id, title, city, province, metadata')
-  .eq('provider', 'lezotraffic')
-  .eq('provider_type', 'city')
-  .limit(3);
+const { rows: cities } = await pool.query(
+  `SELECT id, provider_record_id, title, city, province, metadata
+   FROM events
+   WHERE provider = $1 AND provider_type = $2
+   LIMIT 3`,
+  ['lezotraffic', 'city']
+);
 
 for (const c of (cities || [])) {
   console.log(`  prid: "${c.provider_record_id}"`);
@@ -44,12 +44,13 @@ for (const c of (cities || [])) {
 
 // Check province events sample
 console.log('═══ Province events sample ═══');
-const { data: provinces } = await supabase
-  .from('events')
-  .select('id, provider_record_id, title, city, province, metadata')
-  .eq('provider', 'lezotraffic')
-  .eq('provider_type', 'province')
-  .limit(3);
+const { rows: provinces } = await pool.query(
+  `SELECT id, provider_record_id, title, city, province, metadata
+   FROM events
+   WHERE provider = $1 AND provider_type = $2
+   LIMIT 3`,
+  ['lezotraffic', 'province']
+);
 
 for (const p of (provinces || [])) {
   console.log(`  prid: "${p.provider_record_id}"`);
@@ -60,14 +61,18 @@ for (const p of (provinces || [])) {
 
 // Check the DB schema for provider_record_id constraints
 console.log('═══ Schema check ═══');
-const { data: cols } = await supabase.rpc('exec_sql', {
-  sql: `SELECT column_name, is_nullable, character_maximum_length
-        FROM information_schema.columns
-        WHERE table_name = 'events' AND column_name = 'provider_record_id'`
-});
+try {
+  const { rows: cols } = await pool.query(
+    `SELECT column_name, is_nullable, character_maximum_length
+     FROM information_schema.columns
+     WHERE table_name = 'events' AND column_name = 'provider_record_id'`
+  );
 
-if (cols) {
-  console.log('  provider_record_id schema:', JSON.stringify(cols));
-} else {
+  if (cols && cols.length > 0) {
+    console.log('  provider_record_id schema:', JSON.stringify(cols));
+  } else {
+    console.log('  Could not query schema (rpc not available)');
+  }
+} catch (e) {
   console.log('  Could not query schema (rpc not available)');
 }

@@ -438,12 +438,13 @@ export function generateWeatherIntro(language = 'fr', stationName = 'Radio Lezo'
  * @param {string} stationName - Station name
  * @returns {string} Music intro text
  */
-export function generateMusicIntro(language = 'fr', trackName = '', stationName = 'Radio Lezo') {
+export function generateMusicIntro(language = 'fr', trackName = '', stationName = 'Radio Lezo', artist = '') {
+  const byArtist = artist ? ` par ${artist}` : '';
   const lines = {
-    fr: `Et voici ${trackName} sur ${stationName}.`,
-    en: `Now playing ${trackName} on ${stationName}.`,
-    sw: `Sasa tunacheza ${trackName} kwenye ${stationName}.`,
-    ln: `Sikawa tobeti ${trackName} na ${stationName}.`,
+    fr: `Et voici, ${trackName}${byArtist}, sur ${stationName}. Profitez bien de ce moment musical.`,
+    en: `Now playing ${trackName}${byArtist}, here on ${stationName}. Enjoy this next track.`,
+    sw: `Sasa tunacheza ${trackName}${byArtist}, hapa ${stationName}. Furahia wimbo huu.`,
+    ln: `Sikawa tobeti ${trackName}${byArtist}, awa ${stationName}. Sepela na nzembo oyo.`,
   };
   return lines[language] || lines.en;
 }
@@ -461,6 +462,74 @@ export function generateMusicOutro(language = 'fr', trackName = '', stationName 
     en: `That was ${trackName} on ${stationName}. Stay tuned.`,
     sw: `Hiyo ilikuwa ${trackName} kwenye ${stationName}. Endelea kusikiliza.`,
     ln: `Wana ke ${trackName} na ${stationName}. Kenda koyoka.`,
+  };
+  return lines[language] || lines.en;
+}
+
+/**
+ * Generate a bulletin outro script.
+ */
+export function generateBulletinOutro(language = 'fr', stationName = 'Radio Lezo') {
+  const lines = {
+    fr: `C'étaient les informations. Restez à l'écoute sur ${stationName}.`,
+    en: `That's the latest news. Stay with ${stationName}.`,
+    sw: `Hiyo ni habari za mwisho. Endelea na ${stationName}.`,
+    ln: `Ese sango ya siku oyo. Kenda na ${stationName}.`,
+  };
+  return lines[language] || lines.en;
+}
+
+/**
+ * Generate a "no traffic updates" announcement.
+ * Used when LezoTraffic check returns empty.
+ */
+export function generateNoTrafficAnnouncement(language = 'fr', stationName = 'Radio Lezo') {
+  const lines = {
+    fr: `Vérification du trafic avec ${stationName}. Pas de nouveaux incidents signalés. Passons aux actualités.`,
+    en: `Checking traffic with ${stationName}. No new incidents reported. Moving to the news.`,
+    sw: `Inakagua trafiki na ${stationName}. Hakuna matukio mapya yaliyotangazwa. Tukaende kwenye habari.`,
+    ln: `Tokosala kokota na ${stationName}. Nayeba ya sika moko te. Tokenda na sango.`,
+  };
+  return lines[language] || lines.en;
+}
+
+/**
+ * Generate a traffic check intro (before checking LezoTraffic).
+ */
+export function generateTrafficCheckIntro(language = 'fr', stationName = 'Radio Lezo') {
+  const lines = {
+    fr: `Vérifions le trafic avec ${stationName}.`,
+    en: `Let's check traffic with ${stationName}.`,
+    sw: `Tukaguanye trafiki na ${stationName}.`,
+    ln: `Tokosala kokota na ${stationName}.`,
+  };
+  return lines[language] || lines.en;
+}
+
+/**
+ * Generate a "no news updates" announcement.
+ * Used when news check returns empty.
+ */
+export function generateNoNewsAnnouncement(language = 'fr', stationName = 'Radio Lezo') {
+  const lines = {
+    fr: `Vous êtes à jour sur les actualités avec ${stationName}. Pas de nouveaux développements pour le moment.`,
+    en: `You're up to date on the news with ${stationName}. No new developments at this time.`,
+    sw: `Upo sasa kwenye habari na ${stationName}. Hakuna mapinduzi mapya kwa sasa.`,
+    ln: `Oyo esengi na sango na ${stationName}. Nayeba ya sika moko te sɛsɛ.`,
+  };
+  return lines[language] || lines.en;
+}
+
+/**
+ * Generate a "no weather updates" announcement.
+ * Used when weather check returns empty.
+ */
+export function generateNoWeatherAnnouncement(language = 'fr', stationName = 'Radio Lezo') {
+  const lines = {
+    fr: `Les prévisions météo restent inchangées pour ${stationName}. Nous y reviendrons plus tard.`,
+    en: `Weather conditions remain unchanged for ${stationName}. We'll check again later.`,
+    sw: `Hali ya hewa bado ni sawa kwa ${stationName}. Tutaangalia tena baadaye.`,
+    ln: `Mbula ezali oyo te na ${stationName}. Tokosala dinga.`,
   };
   return lines[language] || lines.en;
 }

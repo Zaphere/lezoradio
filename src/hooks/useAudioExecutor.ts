@@ -156,19 +156,17 @@ export function useAudioExecutor({
       setState({ isPlaying: true, isPaused: false, currentTime: 0, duration: durationSeconds || 0 });
     };
 
-    const handleBackground = (url: string, durationSeconds = 0) => {
+    const handleBackground = (url: string) => {
       if (!mgr.isBackgroundPlaying) {
-        // Non-looping: play once and let onBackgroundEnd refetch next content
-        // Looping: only fallback for 0-duration segments
-        const shouldLoop = durationSeconds <= 0;
-        mgr.startBackground(url, { loop: shouldLoop });
+        // Always loop background music so it's continuously playing under TTS
+        mgr.startBackground(url, { loop: true });
       } else if (url) {
         // Background already playing — swap track if URL changed (new track)
         const currentBg = mgr.getBackgroundElement();
         if (currentBg && currentBg.src !== url) {
           mgr.stopBackground(true);
-          const shouldLoop = durationSeconds <= 0;
-          mgr.startBackground(url, { loop: shouldLoop });
+          // Always loop so background continues under any subsequent TTS
+          mgr.startBackground(url, { loop: true });
         }
       }
     };
@@ -194,7 +192,7 @@ export function useAudioExecutor({
         break;
       case 'ambient':
         // Ambient = background music layer, ducked when foreground TTS plays
-        handleBackground(audioUrl, durationSeconds);
+        handleBackground(audioUrl);
         break;
       case 'transition':
         // Don't stop background during transitions — just stop foreground track

@@ -24,7 +24,7 @@ console.log('========================================');
 console.log(`Ingestion schedule: ${SCHEDULE}`);
 console.log(`Expiry schedule: ${EXPIRY_SCHEDULE}`);
 console.log(`Retention: ${process.env.NEWS_RETENTION_HOURS || 24}h`);
-console.log(`Supabase URL: ${process.env.SUPABASE_URL ? 'configured' : 'NOT CONFIGURED'}`);
+console.log(`Database: ${process.env.DB_HOST ? process.env.DB_HOST + ':' + (process.env.DB_PORT || '5432') + '/' + (process.env.DB_NAME || 'radiolezo') : 'NOT CONFIGURED'}`);
 console.log(`Provider Framework: ${USE_PROVIDER_FRAMEWORK ? 'ENABLED' : 'DISABLED (using legacy)'}`);
 console.log('========================================\n');
 

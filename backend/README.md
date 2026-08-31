@@ -16,8 +16,11 @@ cp .env.example .env
 
 3. Edit `.env` with your configuration:
 ```env
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=radiolezo
+DB_USER=postgres
+DB_PASSWORD=your-db-password
 
 RSS_FEEDS_ESWATINI=https://example.com/eswatini-feed.xml
 RSS_FEEDS_SOUTH_AFRICA=https://example.com/south-africa-feed.xml

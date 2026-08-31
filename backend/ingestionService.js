@@ -34,15 +34,9 @@ function mapSourceCategory(category) {
 
 function mapSourceRegion(category, name) {
   const lower = `${category} ${name}`.toLowerCase();
-  if (lower.includes('kinshasa')) return 'congo';
-  if (lower.includes('goma') || lower.includes('kivu')) return 'congo';
-  if (lower.includes('lubumbashi')) return 'congo';
-  if (lower.includes('congo') || lower.includes('okapi') || lower.includes('rdc')
-      || lower.includes('actualite.cd') || lower.includes('acp') || lower.includes('7sur7')) return 'congo';
-  if (lower.includes('reliefweb') || lower.includes('gdacs')) return 'global';
-  if (lower.includes('traffic')) return 'congo';
-  if (lower.includes('bbc') || lower.includes('africanews') || lower.includes('guardian')
-      || lower.includes('africa.com')) return 'global';
+  if (lower.includes('kinshasa')) return 'kinshasa';
+  if (lower.includes('goma') || lower.includes('kivu')) return 'goma';
+  if (lower.includes('lubumbashi') || lower.includes('haut-katanga')) return 'lubumbashi';
   return 'global';
 }
 
@@ -102,7 +96,7 @@ export async function getAllFeedConfigs() {
       url,
       region: regional.region,
       category: regional.category,
-      language: 'fr',
+      language: regional.language || 'fr',
     });
   }
 
@@ -136,7 +130,7 @@ export async function getAllFeedConfigs() {
 function convertToRadioScript(item, region) {
   let script = '';
 
-  const isDrc = (region || item?.region) === 'congo';
+  const isDrc = (region || item?.region) !== 'global';
   const leadIn = isDrc ? 'Aux informations : ' : 'In the news: ';
 
   if (item.title) {

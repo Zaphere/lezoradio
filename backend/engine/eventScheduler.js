@@ -82,8 +82,8 @@ export async function scheduleBulletins() {
  */
 export function scheduleStationIds(channels, engineConfig) {
   for (const channel of channels) {
-    const minMs = engineConfig?.station_id_interval_min_ms || 300000;  // 5 min
-    const maxMs = engineConfig?.station_id_interval_max_ms || 600000;  // 10 min
+    const minMs = engineConfig?.station_id_interval_min_ms || 180000;  // 3 min (reduced from 5)
+    const maxMs = engineConfig?.station_id_interval_max_ms || 300000;  // 5 min (reduced from 10)
     const intervalMs = minMs + Math.random() * (maxMs - minMs);
 
     const taskId = `station_id:${channel.channel_id}`;
@@ -98,7 +98,7 @@ export function scheduleStationIds(channels, engineConfig) {
         onStationIdCallback({
           channelId: channel.channel_id,
           stationId: channel.station_id,
-          stationName: channel.station_name || 'Radio Lezo',
+          stationName: channel.name || channel.station_name || 'Radio Lezo',
           timezone: channel.timezone,
         });
       }
@@ -106,6 +106,7 @@ export function scheduleStationIds(channels, engineConfig) {
 
     scheduledTasks.set(taskId, { stop: () => clearInterval(intervalId) });
   }
+  console.log(`[${new Date().toISOString()}] [eventScheduler] Station IDs scheduled for ${channels.length} channels`);
 }
 
 /**

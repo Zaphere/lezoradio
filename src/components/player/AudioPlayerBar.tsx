@@ -71,13 +71,13 @@ export default function AudioPlayerBar({
   const progress = duration > 0 ? Math.min(1, displayTime / duration) : 0;
 
   return (
-    <div className="w-full bg-white dark:bg-white/5 rounded-3xl shadow-[0_4px_16px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)] px-4 py-3">
+    <div className="w-full bg-white dark:bg-white/6 rounded-3xl border border-[var(--color-border)] dark:border-white/8 shadow-[0_2px_12px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.2)] px-4 py-3">
       <div className="flex items-center gap-3 mb-2">
         <div className="flex items-center gap-1">
           <button
             onClick={onPrev}
             disabled={!hasPrev}
-            className="p-2 rounded-full text-[#555555] dark:text-[#94A3B8] hover:text-[#00A651] hover:bg-[#00A651]/10 transition-all disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer"
+            className="p-2 rounded-full text-[#6B7280] dark:text-[#94A3B8] hover:text-[#00A651] hover:bg-[#00A651]/10 transition-all disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer"
             aria-label="Previous story"
           >
             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -104,7 +104,7 @@ export default function AudioPlayerBar({
           <button
             onClick={onNext}
             disabled={!hasNext}
-            className="p-2 rounded-full text-[#555555] dark:text-[#94A3B8] hover:text-[#00A651] hover:bg-[#00A651]/10 transition-all disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer"
+            className="p-2 rounded-full text-[#6B7280] dark:text-[#94A3B8] hover:text-[#00A651] hover:bg-[#00A651]/10 transition-all disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer"
             aria-label="Next story"
           >
             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -114,11 +114,11 @@ export default function AudioPlayerBar({
         </div>
 
         <div className="flex-1 min-w-0 ml-1">
-          <p className="text-sm font-medium text-[#111111] dark:text-[#F1F5F9] truncate leading-tight">
+          <p className="text-sm font-medium text-[#1A1D23] dark:text-[#F1F5F9] truncate leading-tight">
             {title || 'No story playing'}
           </p>
           {subtitle && (
-            <p className="text-xs text-[#555555] dark:text-[#94A3B8] truncate leading-tight">
+            <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] truncate leading-tight">
               {subtitle}
             </p>
           )}
@@ -127,7 +127,7 @@ export default function AudioPlayerBar({
 
       <div
         ref={barRef}
-        className="relative h-2 rounded-full bg-[#F0F0F0] dark:bg-white/10 cursor-pointer group touch-none"
+        className="relative h-2 rounded-full bg-[var(--color-surface-subtle)] dark:bg-white/10 cursor-pointer group touch-none"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -147,8 +147,8 @@ export default function AudioPlayerBar({
       </div>
 
       <div className="flex justify-between mt-1.5">
-        <span className="text-xs text-[#555555] dark:text-[#94A3B8] tabular-nums">{formatTime(displayTime)}</span>
-        <span className="text-xs text-[#555555] dark:text-[#94A3B8] tabular-nums">{formatTime(duration)}</span>
+        <span className="text-xs text-[#6B7280] dark:text-[#94A3B8] tabular-nums">{formatTime(displayTime)}</span>
+        <span className="text-xs text-[#6B7280] dark:text-[#94A3B8] tabular-nums">{formatTime(duration)}</span>
       </div>
     </div>
   );

@@ -3,64 +3,57 @@
  * Run from project root: node backend/verify-lezotraffic-live.js
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { pool } from './supabaseClient.js';
 import dotenv from 'dotenv';
-import ws from 'ws';
 
 // Load env
 dotenv.config({ path: 'backend/.env' });
 
-const url = process.env.SUPABASE_URL;
-const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!url || !key) {
-  console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in backend/.env');
-  process.exit(1);
-}
-
-const supabase = createClient(url, key, { realtime: { transport: ws } });
-
 // 1. Check provider_configs
 console.log('═══ STEP 1: provider_configs ═══');
-const { data: configs, error: cfgErr } = await supabase
-  .from('provider_configs')
-  .select('*')
-  .order('provider');
-
-if (cfgErr) {
-  console.error('Error:', cfgErr.message);
-} else {
+try {
+  const { rows: configs } = await pool.query(
+    `SELECT * FROM provider_configs ORDER BY provider`
+  );
   for (const c of configs) {
     const marker = c.provider === 'lezotraffic' ? (c.enabled ? ' ✅ ENABLED' : ' ❌ DISABLED') : '';
     console.log(`  provider=${c.provider}  enabled=${c.enabled}  sync=${c.sync_schedule}${marker}`);
   }
+} catch (cfgErr) {
+  console.error('Error:', cfgErr.message);
 }
 
 // 2. Check events table
 console.log('\n═══ STEP 2: events (last 10) ═══');
-const { data: events, error: evErr, count } = await supabase
-  .from('events')
-  .select('*', { count: 'exact' })
-  .order('created_at', { ascending: false })
-  .limit(10);
-
-if (evErr) {
-  console.error('Error:', evErr.message);
-} else {
-  console.log(`  Total events in table: ${count}`);
+try {
+  const { rows: events, rowCount } = await pool.query(
+    `SELECT * FROM events
+     ORDER BY created_at DESC
+     LIMIT 10`
+  );
+  const { rows: countRows } = await pool.query('SELECT COUNT(*) as count FROM events');
+  console.log(`  Total events in table: ${countRows[0].count}`);
   for (const e of (events || [])) {
     console.log(`  [${e.provider}] ${e.category}/${e.subcategory || '?'} prio=${e.priority} ${e.province || '?'}/${e.city || '?'} — ${(e.title || '').substring(0, 60)}`);
   }
+} catch (evErr) {
+  console.error('Error:', evErr.message);
 }
 
 // 3. LezoTraffic-specific events
 console.log('\n═══ STEP 3: lezotraffic events ═══');
-const { data: ltEvents, count: ltCount } = await supabase
-  .from('events')
-  .select('*', { count: 'exact' })
-  .eq('provider', 'lezotraffic')
-  .order('created_at', { ascending: false })
-  .limit(5);
+const { rows: ltEvents } = await pool.query(
+  `SELECT * FROM events
+   WHERE provider = $1
+   ORDER BY created_at DESC
+   LIMIT 5`,
+  ['lezotraffic']
+);
+const { rows: ltCountRows } = await pool.query(
+  `SELECT COUNT(*) as count FROM events WHERE provider = $1`,
+  ['lezotraffic']
+);
+const ltCount = ltCountRows[0].count;
 
 console.log(`  LezoTraffic events: ${ltCount}`);
 for (const e of (ltEvents || [])) {
@@ -77,10 +70,9 @@ for (const e of (ltEvents || [])) {
 
 // 4. radio_station_state
 console.log('\n═══ STEP 4: radio_station_state ═══');
-const { data: states } = await supabase
-  .from('radio_station_state')
-  .select('*')
-  .limit(5);
+const { rows: states } = await pool.query(
+  `SELECT * FROM radio_station_state LIMIT 5`
+);
 
 if (!states || states.length === 0) {
   console.log('  No rows (engine not started yet — expected)');
@@ -92,11 +84,11 @@ if (!states || states.length === 0) {
 
 // 5. Sync logs
 console.log('\n═══ STEP 5: provider_sync_logs (last 5) ═══');
-const { data: logs } = await supabase
-  .from('provider_sync_logs')
-  .select('*')
-  .order('created_at', { ascending: false })
-  .limit(5);
+const { rows: logs } = await pool.query(
+  `SELECT * FROM provider_sync_logs
+   ORDER BY created_at DESC
+   LIMIT 5`
+);
 
 if (!logs || logs.length === 0) {
   console.log('  No sync logs yet');
@@ -108,10 +100,9 @@ if (!logs || logs.length === 0) {
 
 // 6. station_channels
 console.log('\n═══ STEP 6: station_channels ═══');
-const { data: channels } = await supabase
-  .from('station_channels')
-  .select('*')
-  .eq('is_active', true);
+const { rows: channels } = await pool.query(
+  `SELECT * FROM station_channels WHERE is_active = true`
+);
 
 if (!channels || channels.length === 0) {
   console.log('  No active channels — need to run 999_seed_drc.sql first');
@@ -123,10 +114,9 @@ if (!channels || channels.length === 0) {
 
 // 7. station_voices
 console.log('\n═══ STEP 7: station_voices ═══');
-const { data: voices } = await supabase
-  .from('station_voices')
-  .select('*')
-  .eq('is_active', true);
+const { rows: voices } = await pool.query(
+  `SELECT * FROM station_voices WHERE is_active = true`
+);
 
 if (!voices || voices.length === 0) {
   console.log('  No active voices — need to run 999_seed_drc.sql first');
