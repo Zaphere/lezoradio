@@ -1,7 +1,7 @@
 // backend/engine/radioEngine.js
 // Top-level orchestrator — event-driven, coordinates all engine modules.
 
-import { ENGINE_VERSION, SEGMENT_TYPES, DEFAULT_STATE, VOICE_IDS } from './constants.js';
+import { ENGINE_VERSION, SEGMENT_TYPES, DEFAULT_STATE, VOICE_IDS, getDefaultBackgroundBedUrl } from './constants.js';
 import * as stationController from './stationController.js';
 import * as languageController from './languageController.js';
 import * as contentNormalizer from './contentNormalizer.js';
@@ -34,10 +34,15 @@ import {
 
 /** Present this many news/traffic blocks, then introduce a song from storage/songs. */
 const CONTENT_BEFORE_MUSIC = 3;
+/** Extra time after estimated TTS so the engine never cuts a presenter mid-script. */
+const SPEECH_TAIL_MS = 5000;
+const SONG_TAIL_MS = 2000;
 
 function ttsDuration(ttsResult, text) {
-  if (ttsResult?.durationSeconds > 0) return ttsResult.durationSeconds;
-  return ttsGenerator.estimateSpeechSeconds(text);
+  const fileDuration = ttsResult?.durationSeconds > 0 ? ttsResult.durationSeconds : 0;
+  const estimate = ttsGenerator.estimateSpeechSeconds(text);
+  // NEVER schedule shorter than the text estimate — prevents cutting off presenters
+  return Math.max(fileDuration, estimate);
 }
 
 class RadioEngine {
@@ -103,6 +108,7 @@ class RadioEngine {
     // Initialize state for each channel
     for (const ch of channels) {
       const state = playbackController.createChannelState(ch.channel_id, ch.station_id, ch.language || 'fr');
+      state.backgroundUrl = getDefaultBackgroundBedUrl();
       this.channels.set(ch.channel_id, state);
       console.log(`[${new Date().toISOString()}] [radioEngine] Channel: ${ch.channel_id} (station=${ch.station_id}, lang=${ch.language || 'fr'})`);
     }
@@ -384,11 +390,12 @@ class RadioEngine {
         language: state?.language || 'fr',
         voice_id: null,
         transition_type: 'crossfade',
+        duck_volume: isBackground ? null : 0,
         description: isBackground ? 'Background Music' : 'Music Track',
       });
 
-      // After the segment finishes, dispatch next content via priority chain
-      this.scheduleNextContent(channelId, durationSeconds * 1000);
+      const tail = isBackground ? 0 : SONG_TAIL_MS;
+      this.scheduleNextContent(channelId, durationSeconds * 1000 + tail);
     } catch (err) {
       console.error(`[${new Date().toISOString()}] [radioEngine] writeBackgroundSegment failed for ${channelId}:`, err.message);
     }
@@ -446,12 +453,21 @@ class RadioEngine {
       });
 
       // After welcome ends, start content priority chain
-      this.scheduleNextContent(channelId, durationSeconds * 1000);
+      this.scheduleAfterSpeech(channelId, durationSeconds);
     } catch (err) {
       console.error(`[${new Date().toISOString()}] [radioEngine] writeWelcomeSegment failed for ${channelId}:`, err.message);
       // Fallback: skip welcome, start content directly
       this.dispatchNextContent(channelId);
     }
+  }
+
+  /**
+   * Schedule next content after presenter audio has fully finished.
+   * Adds a tail so underestimated TTS length cannot cut the script.
+   */
+  scheduleAfterSpeech(channelId, durationSeconds) {
+    const ms = Math.max(8, durationSeconds) * 1000 + SPEECH_TAIL_MS;
+    this.scheduleNextContent(channelId, ms);
   }
 
   /**

@@ -138,6 +138,7 @@ const LEGACY_BACKMUSIC_DIR = 'BackMusic';
 const LEGACY_NEWSTRANSITION_DIR = 'NewsTrasition';
 
 const DEFAULT_ENTERTAINMENT_TRACK = '/api/content/storage?bucket=Music&file=AfricaRise.mp3&dir=songs';
+const DEFAULT_BACKGROUND_BED = '/api/content/storage?bucket=Music&file=Backmusic1.mp3&dir=background-music';
 
 // News transition jingle
 const NEWS_TRANSITION_URL = '/api/content/storage?bucket=Music&file=Globalnews.mp3&dir=jingles/transitions';
@@ -301,6 +302,41 @@ export async function getLatestMusicFromBucket() {
 }
 
 /**
+ * Resolve a /api/content/storage URL to a file under storage/.
+ */
+export function localPathFromStorageUrl(url) {
+  try {
+    const u = new URL(url, 'http://localhost');
+    const file = decodeURIComponent(u.searchParams.get('file') || '');
+    const dir = u.searchParams.get('dir') || '';
+    if (!file) return null;
+    return path.join(STORAGE_ROOT, dir, file);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Length of a local MP3/WAV from file size (CBR ~128kbps) plus a tail.
+ * Used so songs and beds are not hard-capped at 180s.
+ */
+export function durationSecondsForStorageUrl(url, fallback = 240) {
+  const localPath = localPathFromStorageUrl(url);
+  if (!localPath || !fs.existsSync(localPath)) return fallback;
+  try {
+    const size = fs.statSync(localPath).size;
+    return Math.max(30, Math.ceil(size / 16000) + 3);
+  } catch {
+    return fallback;
+  }
+}
+
+export function getDefaultBackgroundBedUrl() {
+  const tracks = scanBackgroundMusic();
+  return tracks[0] || DEFAULT_BACKGROUND_BED;
+}
+
+/**
  * Get background music tracks (instrumental beds that loop under TTS).
  * These are ducked when voice content plays.
  */
@@ -316,9 +352,7 @@ export async function getBackgroundMusicTracks() {
     return cachedBackgroundList;
   }
 
-  // Fall back to all music (background will be mixed from available tracks)
-  const allTracks = await getLatestMusicFromBucket();
-  cachedBackgroundList = allTracks;
+  cachedBackgroundList = [DEFAULT_BACKGROUND_BED];
   return cachedBackgroundList;
 }
 

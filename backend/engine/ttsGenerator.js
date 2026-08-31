@@ -45,11 +45,13 @@ function canSpend(costUsd) {
 
 /**
  * Conservative spoken duration so the engine never cuts a script short.
- * ~13 chars/sec plus a 2s tail — slower than the old /18 estimate.
+ * ~8 chars/sec plus a 5s tail — much slower than typical TTS so the next
+ * segment cannot start while the presenter is still talking.
+ * IMPORTANT: This is the MINIMUM duration. Real TTS may take longer.
  */
 export function estimateSpeechSeconds(text) {
   const chars = (text || '').trim().length;
-  return Math.max(8, Math.ceil(chars / 13) + 2);
+  return Math.max(12, Math.ceil(chars / 8) + 5);
 }
 
 /**
@@ -213,8 +215,7 @@ export async function generateTTS(text, voiceId, language, region = 'global') {
       fs.mkdirSync(TTS_STORAGE_DIR, { recursive: true });
     }
 
-    // Duration scales with text length so scheduling stays realistic (~18 chars/sec).
-    const durationSeconds = Math.max(1, Math.min(30, Math.ceil(text.length / 18)));
+    const durationSeconds = estimateSpeechSeconds(text);
     writeDryRunWav(filename, durationSeconds);
 
     const audioUrl = `/api/content/storage?bucket=tts-audio&file=${filename}`;

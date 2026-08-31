@@ -3,7 +3,7 @@
 // REGION-AWARE: Events are filtered by channel region before serving.
 
 import { supabase } from '../supabaseClient.js';
-import { computeEffectivePriority } from './constants.js';
+import { computeEffectivePriority, durationSecondsForStorageUrl } from './constants.js';
 import * as stationController from './stationController.js';
 
 /**
@@ -452,7 +452,13 @@ export async function getNextBackgroundTrack(channelId) {
     const name = fileParam ? decodeURIComponent(fileParam).replace(/\.[^/.]+$/, '') : 'Background Music';
     
     console.log(`[queueManager] Background bed: ${name} (dir=${dirParam})`);
-    return { id: null, title: name, audio_url: url, duration_seconds: 180, isBackground: true };
+    return {
+      id: null,
+      title: name,
+      audio_url: url,
+      duration_seconds: durationSecondsForStorageUrl(url, 120),
+      isBackground: true,
+    };
   }
 
   // PRIORITY 2: DB tracks (entertainment songs — will get intro announcements)
@@ -464,7 +470,13 @@ export async function getNextBackgroundTrack(channelId) {
   const urlParams = new URL(url, 'http://localhost').searchParams;
   const fileParam = urlParams.get('file');
   const name = fileParam ? decodeURIComponent(fileParam).replace(/\.[^/.]+$/, '') : 'Background Music';
-  return { id: null, title: name, audio_url: url, duration_seconds: 180, isBackground: true };
+  return {
+    id: null,
+    title: name,
+    audio_url: url,
+    duration_seconds: durationSecondsForStorageUrl(url, 120),
+    isBackground: true,
+  };
 }
 
 /**
@@ -480,7 +492,13 @@ export async function getNextEntertainmentTrack(channelId) {
     const fileParam = urlParams.get('file');
     const name = fileParam ? decodeURIComponent(fileParam).replace(/\.[^/.]+$/, '') : 'Music';
     console.log(`[queueManager] Entertainment song: ${name}`);
-    return { id: null, title: name, audio_url: url, duration_seconds: 180, isBackground: false };
+    return {
+      id: null,
+      title: name,
+      audio_url: url,
+      duration_seconds: durationSecondsForStorageUrl(url, 240),
+      isBackground: false,
+    };
   }
 
   const dbTrack = await getUnplayedTrack(channelId);

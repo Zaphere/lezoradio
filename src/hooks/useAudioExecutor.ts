@@ -91,8 +91,9 @@ export function useAudioExecutor({
       clearProgressTimer();
       // Don't auto-advance while paused — user controls the session
       if (pausedRef.current) return;
-      // Restore background music volume after TTS/bulletin ends
-      mgr.restoreBackground(TIMING.BACKGROUND_FADE_IN);
+      // DON'T restore background here — it stays ducked until the next ambient segment arrives.
+      // This prevents the background from creeping up at the end of a presentation
+      // if the audio file is slightly shorter than the estimated duration.
       setState(prev => ({ ...prev, isPlaying: false, isPaused: false, currentTime: 0 }));
       onTrackEndRef.current?.();
     });
@@ -132,14 +133,15 @@ export function useAudioExecutor({
     const handleTrackAudio = (url: string, _transition: typeof transitionType) => {
       const duration = durationSeconds > 0 ? durationSeconds * 1000 : 30000;
 
+      // Ensure background music is always playing underneath the presenter
+      // If background isn't running yet (e.g. user joined mid-bulletin), start it now
+      if (nowPlaying?.backgroundAudioUrl && !mgr.isBackgroundPlaying) {
+        mgr.startBackground(nowPlaying.backgroundAudioUrl, { loop: true });
+      }
+
       // Duck background music — voice plays OVER music
-      // Use provided duckVolume or default
       if (mgr.isBackgroundPlaying) {
-        console.log(`[AudioExecutor] duckBackground called — current bg volume: ${mgr.getBackgroundVolume().toFixed(3)}`);
         mgr.duckBackground(TIMING.INTRO_DUCK_DURATION);
-        console.log(`[AudioExecutor] duckBackground returned — bg volume now: ${mgr.getBackgroundVolume().toFixed(3)}`);
-      } else {
-        console.log(`[AudioExecutor] handleTrackAudio — background NOT playing, no ducking needed`);
       }
 
       // Play presenter voice/TTS track immediately
@@ -158,15 +160,17 @@ export function useAudioExecutor({
 
     const handleBackground = (url: string) => {
       if (!mgr.isBackgroundPlaying) {
-        // Always loop background music so it's continuously playing under TTS
+        // Start background music — loops continuously under TTS
         mgr.startBackground(url, { loop: true });
       } else if (url) {
-        // Background already playing — swap track if URL changed (new track)
         const currentBg = mgr.getBackgroundElement();
         if (currentBg && currentBg.src !== url) {
+          // New background track — crossfade to it
           mgr.stopBackground(true);
-          // Always loop so background continues under any subsequent TTS
           mgr.startBackground(url, { loop: true });
+        } else {
+          // Same background track — restore volume (was ducked during presenter)
+          mgr.restoreBackground(TIMING.BACKGROUND_FADE_IN);
         }
       }
     };
