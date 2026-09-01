@@ -7,6 +7,7 @@
     "dev": "node --watch index.js",
     "server": "node server.js",
     "server:dev": "node --watch server.js",
+    "migrate": "node migrate.js",
     "pregen": "node scripts/pregen-audio.js",
     "test": "node test.js"
   },
