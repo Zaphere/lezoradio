@@ -1,8 +1,8 @@
 import cron from 'node-cron';
+import './env.js';
 import { ingestAllFeeds } from './ingestionService.js';
 import { deleteExpiredContent, deleteExpiredEvents } from './expiryCleanup.js';
 import { startApiServer } from './server.js';
-import dotenv from 'dotenv';
 import registry from './providers/providerRegistry.js';
 import scheduler from './providers/providerScheduler.js';
 import healthMonitor from './providers/providerHealthMonitor.js';
@@ -10,8 +10,6 @@ import providerFramework from './providers/providerFramework.js';
 import { registerProvider } from './providers/validator.js';
 import RSSProvider from './providers/rss/rssProvider.js';
 import LezoTrafficProvider from './providers/lezotraffic/lezoTrafficProvider.js';
-
-dotenv.config();
 
 const SCHEDULE = process.env.INGESTION_SCHEDULE || '*/15 * * * *';
 const EXPIRY_SCHEDULE = process.env.EXPIRY_SCHEDULE || '0 * * * *';

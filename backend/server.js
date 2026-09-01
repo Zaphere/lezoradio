@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
+import './env.js';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
@@ -14,8 +14,6 @@ import registry from './providers/providerRegistry.js';
 import scheduler from './providers/providerScheduler.js';
 import healthMonitor from './providers/providerHealthMonitor.js';
 import { supabase as serviceSupabase } from './supabaseClient.js';
-
-dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distPath = path.resolve(__dirname, '..', 'dist');

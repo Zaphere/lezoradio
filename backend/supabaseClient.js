@@ -1,7 +1,5 @@
 import pg from 'pg';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import './env.js';
 
 const pool = new pg.Pool({
   host: process.env.DB_HOST || 'localhost',
