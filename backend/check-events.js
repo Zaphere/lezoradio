@@ -22,8 +22,7 @@ async function checkEvents() {
   // Check events by provider
   const { data: providerCounts, error: providerError } = await supabase
     .from('events')
-    .select('provider')
-    .not('provider', 'is', null);
+    .select('provider');
 
   if (providerError) {
     console.error('Error getting provider counts:', providerError.message);

@@ -57,9 +57,9 @@ async function initializeProviderFramework() {
   console.log('========================================');
   
   try {
-    // Register RSS provider
+    // Register RSS provider - TEMPORARILY DISABLED
     const rssProvider = new RSSProvider({
-      enabled: process.env.RSS_ENABLED !== 'false',
+      enabled: false, // DISABLED to focus on database-to-audio pipeline
       language: process.env.RSS_LANGUAGE || 'fr',
     });
     registry.register(rssProvider);
@@ -130,8 +130,9 @@ if (USE_PROVIDER_FRAMEWORK) {
 }
 
 // Always run legacy ingestion (provides radio_scripts + news_items)
-console.log('Running initial legacy ingestion...');
-runIngestion();
+// TEMPORARILY DISABLED to focus on database-to-audio pipeline
+console.log('Legacy ingestion DISABLED - focusing on database-to-audio pipeline');
+// runIngestion();
 
 // Start the radio broadcast engine (TTS generation + segment scheduling)
 import('./engine/radioEngine.js').then(({ startEngine }) => {

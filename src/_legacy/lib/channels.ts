@@ -4,6 +4,7 @@ import type { NewsCategory } from './types';
 export interface Channel {
   frequency: string;
   name: string;
+  slug: string;
   emoji: string;
   description: string;
   newsCategory?: NewsCategory;
@@ -12,16 +13,16 @@ export interface Channel {
 }
 
 export const CHANNELS: Channel[] = [
-  { frequency: "88.1", name: "Headlines", emoji: "🇿🇦", description: "Today's top stories", isMusic: false },
-  { frequency: "89.3", name: "Traffic", emoji: "🚦", description: "Traffic & road alerts", newsCategory: "traffic", isMusic: false },
-  { frequency: "90.5", name: "Weather", emoji: "🌦", description: "Weather forecasts", isMusic: false },
-  { frequency: "91.7", name: "Business", emoji: "💼", description: "Business & finance", isMusic: false },
-  { frequency: "92.9", name: "Sports", emoji: "⚽", description: "Sports news & scores", isMusic: false },
-  { frequency: "94.1", name: "Africa News", emoji: "🌍", description: "Across the continent", newsCategory: "regional", isMusic: false, isGlobal: true },
-  { frequency: "95.3", name: "World News", emoji: "🌎", description: "International headlines", newsCategory: "global", isMusic: false, isGlobal: true },
-  { frequency: "96.5", name: "Emergency", emoji: "🚨", description: "Emergency alerts", newsCategory: "alert", isMusic: false },
-  { frequency: "97.7", name: "Agriculture", emoji: "🌱", description: "Farming & agriculture", isMusic: false },
-  { frequency: "98.9", name: "Ambient", emoji: "🎵", description: "Continuous ambient music", isMusic: true, isGlobal: true },
+  { frequency: "88.1", name: "Headlines", slug: "headlines", emoji: "🇿🇦", description: "Today's top stories", isMusic: false },
+  { frequency: "89.3", name: "Traffic", slug: "traffic", emoji: "🚦", description: "Traffic & road alerts", newsCategory: "traffic", isMusic: false },
+  { frequency: "90.5", name: "Weather", slug: "weather", emoji: "🌦", description: "Weather forecasts", isMusic: false },
+  { frequency: "91.7", name: "Business", slug: "business", emoji: "💼", description: "Business & finance", isMusic: false },
+  { frequency: "92.9", name: "Sports", slug: "sports", emoji: "⚽", description: "Sports news & scores", isMusic: false },
+  { frequency: "94.1", name: "Africa News", slug: "africa-news", emoji: "🌍", description: "Across the continent", newsCategory: "regional", isMusic: false, isGlobal: true },
+  { frequency: "95.3", name: "World News", slug: "world-news", emoji: "🌎", description: "International headlines", newsCategory: "global", isMusic: false, isGlobal: true },
+  { frequency: "96.5", name: "Emergency", slug: "emergency", emoji: "🚨", description: "Emergency alerts", newsCategory: "alert", isMusic: false },
+  { frequency: "97.7", name: "Agriculture", slug: "agriculture", emoji: "🌱", description: "Farming & agriculture", isMusic: false },
+  { frequency: "98.9", name: "Ambient", slug: "ambient", emoji: "🎵", description: "Continuous ambient music", isMusic: true, isGlobal: true },
 ];
 
 export const GLOBAL_CHANNELS = CHANNELS.filter(c => c.isGlobal);

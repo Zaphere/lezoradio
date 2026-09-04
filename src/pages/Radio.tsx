@@ -121,8 +121,11 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
   const channel = getChannel(currentFreq) ?? CHANNELS[0];
 
   const channelId = useMemo(() => {
+    // If we have a channel override (global channel from URL), use it
     if (channelOverride) return 'global-main';
+    // If we have a DRC region, use the region-based channel
     if (drcRegion) return `${drcRegion.slug}-main`;
+    // For station-based channels, use station ID
     return station.id;
   }, [channelOverride, drcRegion, station]);
 
@@ -139,6 +142,19 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
       latestVersionRef.current = nowPlaying.version;
     }
   }, [nowPlaying?.version]);
+
+  // Handle frequency dial changes - navigate to new channel for global channels
+  useEffect(() => {
+    // Only handle frequency changes for global channels (when channelOverride exists)
+    if (!channelOverride) return;
+
+    const freqChannel = getChannel(currentFreq);
+    const currentSlug = channelOverride.slug;
+    if (freqChannel && freqChannel.slug !== currentSlug) {
+      // Navigate to the new channel
+      navigate(`/channel/${freqChannel.slug}`, { replace: true });
+    }
+  }, [currentFreq, channelOverride, navigate]);
 
   const handleTrackEnd = useCallback(() => {
     const versionAtEnd = latestVersionRef.current;
