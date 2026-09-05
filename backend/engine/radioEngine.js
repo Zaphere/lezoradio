@@ -35,14 +35,15 @@ import {
 /** Present this many news/traffic blocks, then introduce a song from storage/songs. */
 const CONTENT_BEFORE_MUSIC = 3;
 /** Extra time after estimated TTS so the engine never cuts a presenter mid-script. */
-const SPEECH_TAIL_MS = 5000;
+const SPEECH_TAIL_MS = 8000;
 const SONG_TAIL_MS = 2000;
 
 function ttsDuration(ttsResult, text) {
   const fileDuration = ttsResult?.durationSeconds > 0 ? ttsResult.durationSeconds : 0;
   const estimate = ttsGenerator.estimateSpeechSeconds(text);
   // NEVER schedule shorter than the text estimate — prevents cutting off presenters
-  return Math.max(fileDuration, estimate);
+  // Add SPEECH_TAIL_MS buffer to ensure TTS completes before next segment
+  return Math.max(fileDuration, estimate) + (SPEECH_TAIL_MS / 1000);
 }
 
 class RadioEngine {
@@ -448,7 +449,7 @@ class RadioEngine {
         language: voice.language,
         voice_id: voice.voice.voice_id,
         transition_type: 'duck',
-        duck_volume: 0.06,
+        duck_volume: 0.20,
         description: welcomeText,
       });
 
@@ -867,7 +868,7 @@ class RadioEngine {
         language: voice.language,
         voice_id: voice.voice.voice_id,
         transition_type: 'duck',
-        duck_volume: 0.06,
+        duck_volume: 0.20,
         provider: events[0]?.provider || null,
         city: events[0]?.city || null,
         province: events[0]?.province || null,
@@ -911,7 +912,7 @@ class RadioEngine {
       language: voice.language,
       voice_id: voice.voice.voice_id,
       transition_type: 'duck',
-      duck_volume: 0.06,
+      duck_volume: 0.20,
       provider: topEvent.provider || null,
       city: topEvent.city || null,
       province: topEvent.province || null,
@@ -1008,7 +1009,7 @@ class RadioEngine {
           language,
           voice_id: voice.voice_id,
           transition_type: 'duck',
-          duck_volume: 0.06,
+          duck_volume: 0.20,
         });
         this.scheduleNextContent(channelId, durationSeconds * 1000);
       }

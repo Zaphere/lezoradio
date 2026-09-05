@@ -1,14 +1,12 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import type { CSSProperties } from 'react';
-import type { StationRecord, BroadcastMode, NewsCategory } from '../lib/types';
-import { getChannel, newsCategoryForChannel, slugify, CHANNELS, getGlobalChannelBySlug } from '../lib/channels';
+import type { StationRecord, BroadcastMode } from '../lib/types';
+import { getChannel, slugify, getGlobalChannelBySlug } from '../lib/channels';
 import type { Channel } from '../lib/channels';
 import { useNowPlaying } from '../hooks/useNowPlaying';
 import { useAudioExecutor } from '../hooks/useAudioExecutor';
-import { useNewsItems } from '../hooks/useSupabase';
 import { fetchStations, pruneOldData } from '../lib/supabase';
-import { filterNewsForStation } from '../lib/stationNewsFilter';
 import { getFlagEmoji } from '../lib/types';
 import type { DCRegion } from '../lib/drcRegions';
 import { DRC_COUNTRY, getRegionBySlug } from '../lib/drcRegions';
@@ -21,10 +19,8 @@ import FrequencyDial from '../components/FrequencyDial';
 import RadioControlsSheet from '../components/player/RadioControlsSheet';
 import BroadcastModeIndicator from '../components/player/BroadcastModeIndicator';
 import AudioPlayerBar from '../components/player/AudioPlayerBar';
-import NewsFeedPreview from '../components/NewsFeedPreview';
 
-const SOFT_BTN =
-  'rf-press touch-manipulation select-none';
+const SOFT_BTN = 'rf-press touch-manipulation select-none';
 
 export default function Radio() {
   const { countrySlug, channelSlug } = useParams<{ countrySlug: string; channelSlug: string }>();
@@ -35,12 +31,15 @@ export default function Radio() {
   const [drcRegion, setDrcRegion] = useState<DCRegion | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
+    setLoading(true);
+
     if (channelSlug) {
       const ch = getGlobalChannelBySlug(channelSlug);
       if (ch) {
         setChannelOverride(ch);
         setDrcRegion(null);
-        const dummyStation: StationRecord = {
+        setStation({
           id: ch.frequency,
           name: ch.name,
           country: ch.name,
@@ -52,8 +51,7 @@ export default function Radio() {
           priority: 0,
           created_at: '',
           updated_at: '',
-        };
-        setStation(dummyStation);
+        });
       } else {
         navigate('/', { replace: true });
       }
@@ -61,12 +59,13 @@ export default function Radio() {
       return;
     }
 
-    if (countrySlug && countrySlug.startsWith('drc-')) {
+    if (countrySlug?.startsWith('drc-')) {
       const regionSlug = countrySlug.replace('drc-', '');
       const region = getRegionBySlug(regionSlug);
       if (region) {
         setDrcRegion(region);
-        const drcStation: StationRecord = {
+        setChannelOverride(null);
+        setStation({
           id: region.id,
           name: `${DRC_COUNTRY.name} - ${region.name}`,
           country: DRC_COUNTRY.name,
@@ -78,8 +77,7 @@ export default function Radio() {
           priority: 0,
           created_at: '',
           updated_at: '',
-        };
-        setStation(drcStation);
+        });
         setLoading(false);
         return;
       }
@@ -88,21 +86,29 @@ export default function Radio() {
     }
 
     fetchStations().then(all => {
+      if (!isMounted) return;
       const found = all.find(s => slugify(s.name) === countrySlug);
-      setStation(found ?? null);
-      setDrcRegion(null);
+      if (found) {
+        setStation(found);
+        setChannelOverride(null);
+        setDrcRegion(null);
+      } else {
+        navigate('/', { replace: true });
+      }
       setLoading(false);
     });
-  }, [countrySlug, channelSlug, navigate]);
 
-  useEffect(() => {
-    if (!loading && !station) navigate('/', { replace: true });
-  }, [loading, station, navigate]);
+    return () => {
+      isMounted = false;
+    };
+  }, [countrySlug, channelSlug, navigate]);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-bg-primary transition-colors duration-300">
-        <div className="w-6 h-6 border-2 border-[#00A651] border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 transition-colors duration-300">
+        <div className="relative flex items-center justify-center">
+          <div className="w-10 h-10 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+        </div>
       </div>
     );
   }
@@ -112,25 +118,29 @@ export default function Radio() {
   return <RadioPage station={station} channelOverride={channelOverride} drcRegion={drcRegion} />;
 }
 
-function RadioPage({ station, channelOverride, drcRegion }: { station: StationRecord; channelOverride: Channel | null; drcRegion?: DCRegion | null }) {
+function RadioPage({
+  station,
+  channelOverride,
+  drcRegion,
+}: {
+  station: StationRecord;
+  channelOverride: Channel | null;
+  drcRegion?: DCRegion | null;
+}) {
   const navigate = useNavigate();
   const [currentFreq, setCurrentFreq] = useState(channelOverride?.frequency ?? '88.1');
-  const [newsCategoryFilter, setNewsCategoryFilter] = useState<NewsCategory | undefined>(undefined);
-  const isGlobal = !!channelOverride;
-
-  const channel = getChannel(currentFreq) ?? CHANNELS[0];
-
-  const channelId = useMemo(() => {
-    // If we have a channel override (global channel from URL), use it
-    if (channelOverride) return 'global-main';
-    // If we have a DRC region, use the region-based channel
-    if (drcRegion) return `${drcRegion.slug}-main`;
-    // For station-based channels, use station ID
-    return station.id;
-  }, [channelOverride, drcRegion, station]);
-
   const [userStarted, setUserStarted] = useState(false);
   const [skipToLive, setSkipToLive] = useState(false);
+  const [volume, setVolume] = useState(1);
+
+  const isGlobal = Boolean(channelOverride);
+
+  const channelId = useMemo(() => {
+    if (channelOverride) return 'global-main';
+    if (drcRegion) return `${drcRegion.slug}-main`;
+    return station.id;
+  }, [channelOverride, drcRegion, station.id]);
+
   const latestVersionRef = useRef(0);
   const { nowPlaying, error: nowPlayingError, refetch: refetchNowPlaying } = useNowPlaying({
     channelId,
@@ -143,52 +153,34 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
     }
   }, [nowPlaying?.version]);
 
-  // Handle frequency dial changes - navigate to new channel for global channels
   useEffect(() => {
-    // Only handle frequency changes for global channels (when channelOverride exists)
     if (!channelOverride) return;
 
     const freqChannel = getChannel(currentFreq);
-    const currentSlug = channelOverride.slug;
-    if (freqChannel && freqChannel.slug !== currentSlug) {
-      // Navigate to the new channel
+    if (freqChannel && freqChannel.slug !== channelOverride.slug) {
       navigate(`/channel/${freqChannel.slug}`, { replace: true });
     }
   }, [currentFreq, channelOverride, navigate]);
 
   const handleTrackEnd = useCallback(() => {
     const versionAtEnd = latestVersionRef.current;
-
-    let interval: ReturnType<typeof setInterval> | null = null;
     let pollCount = 0;
-    const maxAttempts = 20; // Increased from 10 to give more time for backend to advance
+    const maxAttempts = 20;
 
-    const poll = async () => {
+    const interval = setInterval(async () => {
       pollCount++;
       await refetchNowPlaying();
 
-      // Give the useEffect time to update latestVersionRef
-      await new Promise(resolve => setTimeout(resolve, 100));
-
       if (latestVersionRef.current > versionAtEnd) {
-        if (interval) {
-          clearInterval(interval);
-          interval = null;
-        }
+        clearInterval(interval);
         return;
       }
 
-      // Fail-safe: force skip to live if we've been waiting too long (silence detection)
-      if (pollCount >= maxAttempts && interval) {
-        console.log('[Radio] Auto-advance timeout - forcing skip to live');
+      if (pollCount >= maxAttempts) {
         setSkipToLive(true);
         clearInterval(interval);
-        interval = null;
       }
-    };
-
-    poll();
-    interval = setInterval(poll, 1000); // Changed from 1500ms to 1000ms for faster response
+    }, 1000);
   }, [refetchNowPlaying]);
 
   const audio = useAudioExecutor({ nowPlaying, enabled: userStarted, onTrackEnd: handleTrackEnd });
@@ -206,7 +198,7 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
         body: JSON.stringify({ channel_id: channelId }),
       });
     } catch {
-      // fallback: just refetch
+      // Fallback silently
     }
     refetchNowPlaying();
   }, [channelId, refetchNowPlaying]);
@@ -214,61 +206,64 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
   const isLive = userStarted && nowPlaying !== null && nowPlaying.segmentType !== 'silence';
   const isMusicMode = nowPlaying?.segmentType === 'ambient' && nowPlaying.audioType === 'stream';
 
-  const displayEmoji = isGlobal ? channelOverride!.emoji
-    : drcRegion ? drcRegion.emoji
-      : (station.image_url ? undefined : getFlagEmoji(station.country_code));
+  const displayEmoji = isGlobal
+    ? channelOverride?.emoji
+    : drcRegion
+    ? drcRegion.emoji
+    : station.image_url
+    ? undefined
+    : getFlagEmoji(station.country_code);
 
-  
-  const displayImage = isGlobal ? undefined : drcRegion ? undefined : station.image_url;
+  const displayImage = !isGlobal && !drcRegion ? station.image_url : undefined;
   const displayName = drcRegion ? `${DRC_COUNTRY.name} \u2014 ${drcRegion.name}` : station.name;
-  const displaySubtitle = isGlobal ? channelOverride!.description
-    : drcRegion ? drcRegion.description
-      : station.region;
-  const displayIcon = displayImage
-    ? <img src={displayImage} alt={displayName} className="w-12 h-12 rounded-full object-cover" />
-    : <span className="text-4xl">{displayEmoji}</span>;
+  const displaySubtitle = isGlobal
+    ? channelOverride?.description
+    : drcRegion
+    ? drcRegion.description
+    : station.region;
+
+  const displayIcon = displayImage ? (
+    <img src={displayImage} alt={displayName} className="w-14 h-14 rounded-full object-cover shadow-sm" />
+  ) : (
+    <span className="text-4xl drop-shadow-xs">{displayEmoji}</span>
+  );
 
   const theme = useMemo(
     () => getCountryTheme(station.country_code, displayName, drcRegion?.slug ?? null),
     [station.country_code, displayName, drcRegion?.slug],
   );
-  const themeVars = useMemo<CSSProperties>(() => ({
-    '--c-primary': theme.primary,
-    '--c-secondary': theme.secondary,
-    '--c-accent': theme.accent,
-    '--c-glow': theme.glow,
-    '--c-gradient': theme.gradient,
-  } as CSSProperties), [theme]);
+
+  const themeVars = useMemo<CSSProperties>(
+    () =>
+      ({
+        '--c-primary': theme.primary,
+        '--c-secondary': theme.secondary,
+        '--c-accent': theme.accent,
+        '--c-glow': theme.glow,
+        '--c-gradient': theme.gradient,
+      } as CSSProperties),
+    [theme],
+  );
 
   const timezone = useMemo(
     () => resolveTimezone(station.timezone, station.country_code, drcRegion?.slug),
     [station.timezone, station.country_code, drcRegion?.slug],
   );
-  const isDrcBroadcast = !!drcRegion;
 
-  const channelNewsCat = useMemo(() => newsCategoryForChannel(channel), [channel]);
-  const { items: allItems, loading: newsLoading } = useNewsItems(undefined, channelNewsCat);
-  const filteredNews = useMemo(
-    () => filterNewsForStation(allItems, station, channelNewsCat),
-    [allItems, station, channelNewsCat],
-  );
-  const displayNews = useMemo(() => {
-    if (!newsCategoryFilter) return filteredNews;
-    return filteredNews.filter(item => item.category === newsCategoryFilter);
-  }, [filteredNews, newsCategoryFilter]);
-
+  const isDrcBroadcast = Boolean(drcRegion);
   const timeInfo = useStationClock(timezone);
-
-  const [volume, setVolume] = useState(1);
 
   const handleFrequencyChange = useCallback((freq: string) => {
     setCurrentFreq(freq);
   }, []);
 
-  const handleVolumeChange = useCallback((v: number) => {
-    setVolume(v);
-    audio.setVolume(v);
-  }, [audio.setVolume]);
+  const handleVolumeChange = useCallback(
+    (v: number) => {
+      setVolume(v);
+      audio.setVolume(v);
+    },
+    [audio],
+  );
 
   const handlePlayPause = useCallback(() => {
     audio.resumeAudioContext();
@@ -279,11 +274,14 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
     } else {
       refetchNowPlaying();
     }
-  }, [audio.isPaused, audio.isPlaying, audio.pause, audio.resume, audio.resumeAudioContext, refetchNowPlaying]);
+  }, [audio, refetchNowPlaying]);
 
-  const handleSeek = useCallback((time: number) => {
-    audio.seek(time);
-  }, [audio.seek]);
+  const handleSeek = useCallback(
+    (time: number) => {
+      audio.seek(time);
+    },
+    [audio],
+  );
 
   useEffect(() => {
     pruneOldData();
@@ -291,7 +289,9 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
     return () => clearInterval(interval);
   }, []);
 
-  const isVoicePlaying = audio.isPlaying && ['bulletin', 'tts', 'announcement', 'jingle'].includes(nowPlaying?.segmentType ?? '');
+  const isVoicePlaying =
+    audio.isPlaying &&
+    ['bulletin', 'tts', 'announcement', 'jingle'].includes(nowPlaying?.segmentType ?? '');
 
   const mode = useMemo<BroadcastMode>(() => {
     if (!isLive) return 'IDLE';
@@ -301,39 +301,48 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
   }, [isLive, isMusicMode, nowPlaying?.segmentType]);
 
   const nextSegmentLabel = useMemo<string>(() => {
-    if (!isLive) return '';
-    if (nowPlaying?.nextTitle) return `Next: ${nowPlaying.nextTitle}`;
-    return '';
+    if (!isLive || !nowPlaying?.nextTitle) return '';
+    return `Up Next: ${nowPlaying.nextTitle}`;
   }, [isLive, nowPlaying?.nextTitle]);
 
   return (
-    <div className="flex flex-col h-full min-h-0 select-none pb-4 bg-bg-primary transition-colors duration-300" style={themeVars}>
+    <div
+      className="flex flex-col h-full min-h-screen select-none pb-6 transition-colors duration-500 relative overflow-hidden bg-slate-50 text-slate-800"
+      style={{ ...themeVars }}
+    >
+      {/* Background Soft Radial Accent */}
+      <div
+        className="pointer-events-none absolute -top-32 left-1/2 -translate-x-1/2 w-[450px] h-[450px] rounded-full blur-[100px] opacity-15 transition-all duration-1000"
+        style={{ background: theme.gradient }}
+      />
+
       <style>{`
-        @keyframes rf-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes rf-pulse-ring { 0%, 100% { box-shadow: 0 0 0 0 var(--c-glow); } 50% { box-shadow: 0 0 0 8px transparent; } }
-        .rf-fade-up { animation: rf-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+        @keyframes rf-fade-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes rf-pulse-ring { 0%, 100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.4); } 50% { box-shadow: 0 0 0 10px transparent; } }
+        .rf-fade-up { animation: rf-fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
         .rf-pulse { animation: rf-pulse-ring 2.4s ease-in-out infinite; }
         .rf-press {
           transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1),
                       box-shadow 180ms ease, filter 180ms ease, background-color 180ms ease;
         }
-        .rf-press:hover { filter: brightness(1.08); }
-        .rf-press:active { transform: scale(0.92); filter: brightness(0.96); }
+        .rf-press:hover { filter: brightness(1.05); }
+        .rf-press:active { transform: scale(0.95); filter: brightness(0.95); }
         @media (prefers-reduced-motion: reduce) {
           .rf-fade-up, .rf-pulse, .rf-press { animation: none !important; transition: none !important; }
         }
       `}</style>
 
-      <div className="sticky top-0 z-40 bg-bg-primary/85 backdrop-blur-2xl border-b border-[var(--color-border)] shadow-[0_1px_8px_rgba(0,0,0,0.03)] shrink-0 transition-colors duration-300">
-        <div className="w-full px-4 py-3 flex items-center justify-between">
+      {/* Header */}
+      <div className="sticky top-0 z-40 bg-white/70 backdrop-blur-md border-b border-slate-200/80 shadow-xs shrink-0">
+        <div className="max-w-lg mx-auto w-full px-4 py-3 flex items-center justify-between">
           <button
             onClick={() => navigate('/')}
-            className={`${SOFT_BTN} flex items-center gap-1.5 text-[#6B7280] dark:text-[#94A3B8] hover:text-[#00A651] min-h-10 -ml-1 pl-1 pr-3 rounded-full`}
+            className={`${SOFT_BTN} flex items-center gap-2 text-slate-700 hover:text-indigo-600 bg-slate-100/80 hover:bg-slate-200/80 px-3.5 py-1.5 rounded-full border border-slate-200 text-xs font-semibold tracking-wide transition-colors`}
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
             </svg>
-            <span className="text-sm font-semibold">{isGlobal ? 'All Channels' : (isDrcBroadcast ? DRC_COUNTRY.name : 'All Countries')}</span>
+            <span>{isGlobal ? 'All Channels' : isDrcBroadcast ? DRC_COUNTRY.name : 'All Countries'}</span>
           </button>
 
           <div className="flex items-center gap-2">
@@ -344,79 +353,90 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto radio-scrollable-content max-w-lg mx-auto w-full px-4 py-4 space-y-4">
-        <div className="space-y-4">
-          <div className="text-center space-y-1.5 rf-fade-up">
-            <div
-              className="inline-flex items-center justify-center w-14 h-14 rounded-full transition-shadow duration-500 relative overflow-hidden"
-              style={{
-                background: theme.gradient,
-                boxShadow: isLive
-                  ? `0 0 24px -4px var(--c-glow), 0 4px 12px rgba(0,0,0,0.1)`
-                  : `0 4px 12px rgba(0,0,0,0.08)`,
-                border: '2px solid rgba(255,255,255,0.25)',
-              }}
-            >
-              <div className="absolute inset-0 bg-white/15" />
-              <span className="relative z-10 drop-shadow-[0_1px_2px_rgba(0,0,0,0.2)]">
-                {displayIcon}
-              </span>
-            </div>
-            <h1 className="text-[22px] font-bold text-[#1A1D23] dark:text-[#F1F5F9] tracking-tight">{displayName}</h1>
+      {/* Main Content Area */}
+      <div className="flex-1 min-h-0 overflow-y-auto radio-scrollable-content max-w-lg mx-auto w-full px-4 pt-6 pb-4 space-y-6 z-10">
+        {/* Station Info Header */}
+        <div className="text-center space-y-2.5 rf-fade-up">
+          <div
+            className="inline-flex items-center justify-center w-20 h-20 rounded-full transition-all duration-700 relative overflow-hidden ring-4 ring-white shadow-xl"
+            style={{
+              background: theme.gradient,
+              boxShadow: isLive
+                ? `0 10px 25px -5px rgba(79, 70, 229, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.05)`
+                : `0 8px 16px -4px rgba(0, 0, 0, 0.1)`,
+            }}
+          >
+            <div className="absolute inset-0 bg-white/20 backdrop-blur-xs" />
+            <span className="relative z-10 drop-shadow-xs">{displayIcon}</span>
+          </div>
+
+          <div className="space-y-1">
+            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+              {displayName}
+            </h1>
             {displaySubtitle && (
-              <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] leading-none">{displaySubtitle}</p>
+              <p className="text-xs font-medium text-slate-500 max-w-xs mx-auto leading-relaxed">
+                {displaySubtitle}
+              </p>
             )}
-            <div className="flex items-center justify-center gap-1.5 mt-1">
-              <BroadcastModeIndicator mode={mode} bulletinHour={null} />
-            </div>
           </div>
 
-          <div className="flex justify-center relative">
-            <div
-              className="absolute inset-0 m-auto w-32 h-32 rounded-full blur-xl opacity-35 pointer-events-none transition-opacity duration-700"
-              style={{ background: theme.gradient, opacity: isLive ? 0.35 : 0.12 }}
+          <div className="flex items-center justify-center gap-2 pt-1">
+            <BroadcastModeIndicator mode={mode} bulletinHour={null} />
+          </div>
+        </div>
+
+        {/* Dial Component */}
+        <div className="flex justify-center relative py-2">
+          <div
+            className="absolute inset-0 m-auto w-40 h-40 rounded-full blur-2xl opacity-20 pointer-events-none transition-opacity duration-700 bg-indigo-500"
+          />
+          <div className="relative touch-none" style={{ touchAction: 'none' }}>
+            <FrequencyDial
+              frequency={currentFreq}
+              isActive={isLive}
+              onChange={handleFrequencyChange}
             />
-            <div className="relative touch-none" style={{ touchAction: 'none' }}>
-              <FrequencyDial
-                frequency={currentFreq}
-                isActive={isLive}
-                onChange={handleFrequencyChange}
-              />
-            </div>
           </div>
+        </div>
 
-          <div className="flex justify-center py-1">
-            <AudioVisualizer isPlaying={audio.isPlaying} analyser={audio.getAnalyser()} size="medium" />
+        {/* Audio Visualizer Card */}
+        <div className="flex flex-col items-center justify-center py-3 bg-white border border-slate-200/80 rounded-2xl shadow-sm">
+          <AudioVisualizer isPlaying={audio.isPlaying} analyser={audio.getAnalyser()} size="medium" />
+        </div>
+
+        {/* Start Audio CTA */}
+        {!userStarted && (
+          <div className="flex flex-col items-center gap-3 py-2">
+            <button
+              onClick={() => {
+                setUserStarted(true);
+                audio.resumeAudioContext();
+              }}
+              className={`${SOFT_BTN} group relative inline-flex items-center justify-center gap-2.5 px-8 py-3.5 rounded-full text-white text-base font-bold tracking-wide transition-all bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-lg shadow-indigo-500/25 cursor-pointer active:scale-95 overflow-hidden`}
+            >
+              <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+              <span>Start Stream</span>
+            </button>
+            <span className="text-[11px] text-slate-400 uppercase tracking-widest font-semibold">
+              Click to connect stream
+            </span>
+
+            {nowPlayingError && (
+              <div className="mt-2 rounded-xl bg-red-50 border border-red-200 px-4 py-2 text-xs font-medium text-red-600">
+                Connection error: {nowPlayingError}
+              </div>
+            )}
           </div>
+        )}
 
-          {!userStarted && (
-            <div className="flex flex-col items-center gap-2 py-2">
-              <button
-                onClick={() => {
-                  setUserStarted(true);
-                  audio.resumeAudioContext();
-                }}
-                className={`${SOFT_BTN} inline-flex items-center gap-1.5 px-6 py-2.5 rounded-full text-white text-base font-bold transition-all cursor-pointer active:scale-95`}
-                style={{
-                  background: theme.gradient,
-                  boxShadow: `0 4px 16px ${theme.glow}`,
-                }}
-              >
-                <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-                Start Stream
-              </button>
-              {nowPlayingError && (
-                <div className="rounded-full bg-[#D62828]/10 px-4 py-1.5 text-sm text-[#D62828]">
-                  Connection error: {nowPlayingError}
-                </div>
-              )}
-            </div>
-          )}
-
-          {userStarted && (
-            <div className="space-y-3">
+        {/* Controls and Script Display */}
+        {userStarted && (
+          <div className="space-y-4">
+            {/* Embedded Player Bar Wrapper */}
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-2.5 shadow-sm">
               <AudioPlayerBar
                 title={nowPlaying?.title ?? 'Radio Lezo — Background'}
                 subtitle={nowPlaying?.artist ?? undefined}
@@ -430,48 +450,55 @@ function RadioPage({ station, channelOverride, drcRegion }: { station: StationRe
                 onPrev={() => {}}
                 onNext={handleNext}
                 onSeek={handleSeek}
+                volume={volume}
+                onVolumeChange={handleVolumeChange}
               />
+            </div>
 
-              {/* Script text display — shows RSS content being read aloud */}
-              {nowPlaying?.description && nowPlaying.segmentType !== 'ambient' && nowPlaying.segmentType !== 'silence' && (
-                <div className="bg-white dark:bg-white/6 rounded-2xl border border-[var(--color-border)] dark:border-white/8 shadow-[0_2px_8px_rgba(0,0,0,0.03)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.15)] p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className={`w-2 h-2 rounded-full ${isVoicePlaying ? 'bg-[#00A651] animate-pulse' : 'bg-[#6B7280]/40'}`} />
-                    <span className="text-xs font-semibold text-[#6B7280] dark:text-[#94A3B8] uppercase tracking-wider">
-                      {isVoicePlaying ? 'On Air' : 'Script Ready'}
-                    </span>
+            {/* On Air Script Container */}
+            {nowPlaying?.description &&
+              nowPlaying.segmentType !== 'ambient' &&
+              nowPlaying.segmentType !== 'silence' && (
+                <div className="relative overflow-hidden bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                  <div className="absolute top-0 left-0 bottom-0 w-1 bg-indigo-600" />
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-2 h-2 rounded-full ${
+                          isVoicePlaying ? 'bg-indigo-600 animate-pulse ring-4 ring-indigo-100' : 'bg-slate-300'
+                        }`}
+                      />
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        {isVoicePlaying ? 'On Air Script' : 'Script Ready'}
+                      </span>
+                    </div>
                   </div>
-                  <p className="text-sm text-[#1A1D23] dark:text-[#F1F5F9] leading-relaxed">
+                  <p className="text-sm text-slate-700 leading-relaxed font-normal">
                     {nowPlaying.description}
                   </p>
                 </div>
               )}
-            </div>
-          )}
+          </div>
+        )}
 
-          <NewsFeedPreview
-            items={displayNews}
-            loading={newsLoading}
-            category={newsCategoryFilter}
-            stationName={displayName}
-            onCategoryChange={setNewsCategoryFilter}
-          />
-
-          {nextSegmentLabel && (
-            <div className="text-center text-sm text-[#6B7280] dark:text-[#94A3B8]">
+        {/* Up Next Notice */}
+        {nextSegmentLabel && (
+          <div className="text-center py-1">
+            <span className="inline-block text-xs font-medium text-slate-500 bg-slate-100 px-4 py-1.5 rounded-full border border-slate-200/60">
               {nextSegmentLabel}
-            </div>
-          )}
-        </div>
+            </span>
+          </div>
+        )}
       </div>
 
+      {/* Bottom Controls Sheet */}
       <RadioControlsSheet
         volume={volume}
         onVolumeChange={handleVolumeChange}
         timeInfo={timeInfo}
         isLive={isLive}
         onGoLive={handleGoLive}
-        showGoLive={isLive && skipToLive && !!nowPlaying?.nextTitle}
+        showGoLive={isLive && skipToLive && Boolean(nowPlaying?.nextTitle)}
       />
     </div>
   );

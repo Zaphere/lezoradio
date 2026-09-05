@@ -270,12 +270,12 @@ export default function FrequencyDial({ frequency, isActive, tunerSoundEnabled =
         >
           <div
             className={`text-[36px] font-bold font-mono tracking-tight transition-colors ${
-              isActive ? 'text-[#111111] dark:text-[#F1F5F9]' : 'text-[#555555] dark:text-[#94A3B8]'
+              isActive ? 'text-[#000000] dark:text-[#F1F5F9]' : 'text-[#000000] dark:text-[#94A3B8]'
             }`}
           >
             {displayFreq}
           </div>
-          <div className="text-sm text-[#555555] dark:text-[#94A3B8] font-medium tracking-wider">FM</div>
+          <div className="text-sm text-[#000000] dark:text-[#94A3B8] font-medium tracking-wider">FM</div>
         </div>
       </div>
 
@@ -283,12 +283,12 @@ export default function FrequencyDial({ frequency, isActive, tunerSoundEnabled =
       <div className="mt-4 text-center min-h-[2.5rem]">
         {channel ? (
           <div className={`text-base font-semibold transition-colors ${
-            isActive ? 'text-[#111111] dark:text-[#F1F5F9]' : 'text-[#555555] dark:text-[#94A3B8]'
+            isActive ? 'text-[#000000] dark:text-[#F1F5F9]' : 'text-[#000000] dark:text-[#94A3B8]'
           }`}>
             {channel.name}
           </div>
         ) : (
-          <div className="text-sm text-[#555555] dark:text-[#94A3B8]">
+          <div className="text-sm text-[#000000] dark:text-[#94A3B8]">
             {isDragging ? 'Tuning...' : '--'}
           </div>
         )}
