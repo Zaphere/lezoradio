@@ -6,6 +6,12 @@ import { supabase } from '../supabaseClient.js';
 import { computeEffectivePriority, durationSecondsForStorageUrl } from './constants.js';
 import * as stationController from './stationController.js';
 
+// ── Sequential track playback ──────────────────────────────────────────────
+// Per-channel round-robin index trackers. Each channel plays through ALL tracks
+// in a folder before repeating. Index wraps to 0 when it reaches the end.
+const entertainmentTrackIndex = new Map(); // channelId -> number
+const backgroundTrackIndex = new Map();    // channelId -> number
+
 /**
  * Build the region filter for a channel's content queries.
  * A regional channel plays content from its own region PLUS global content.
@@ -129,8 +135,13 @@ export async function getUnplayedTrack(channelId) {
 
   if (pool.length === 0) return null;
 
-  // Random selection from pool
-  const track = pool[Math.floor(Math.random() * pool.length)];
+  // Sequential round-robin: play through ALL tracks before repeating
+  const dbTrackIndexKey = `db:${channelId}`;
+  const lastIndex = entertainmentTrackIndex.get(dbTrackIndexKey) ?? -1;
+  const nextIndex = (lastIndex + 1) % pool.length;
+  entertainmentTrackIndex.set(dbTrackIndexKey, nextIndex);
+  
+  const track = pool[nextIndex];
   track.duration_seconds = Math.round((track.duration_ms || 180000) / 1000);
   // DB tracks are real songs (music/entertainment_tracks) — play in full as foreground
   track.isBackground = false;
@@ -443,15 +454,19 @@ export async function getNextBackgroundTrack(channelId) {
   const bgTracks = await getBackgroundMusicTracks();
   
   if (bgTracks && bgTracks.length > 0) {
-    const randomIndex = Math.floor(Math.random() * bgTracks.length);
-    const url = bgTracks[randomIndex];
+    // Sequential round-robin: play through ALL tracks before repeating
+    const lastIndex = backgroundTrackIndex.get(channelId) ?? -1;
+    const nextIndex = (lastIndex + 1) % bgTracks.length;
+    backgroundTrackIndex.set(channelId, nextIndex);
+    
+    const url = bgTracks[nextIndex];
     
     const urlParams = new URL(url, 'http://localhost').searchParams;
     const fileParam = urlParams.get('file');
     const dirParam = urlParams.get('dir') || '';
     const name = fileParam ? decodeURIComponent(fileParam).replace(/\.[^/.]+$/, '') : 'Background Music';
     
-    console.log(`[queueManager] Background bed: ${name} (dir=${dirParam})`);
+    console.log(`[queueManager] Background bed: ${name} (dir=${dirParam}) [${nextIndex + 1}/${bgTracks.length}]`);
     return {
       id: null,
       title: name,
@@ -487,11 +502,16 @@ export async function getNextEntertainmentTrack(channelId) {
   const songs = await getEntertainmentSongUrls();
 
   if (songs && songs.length > 0) {
-    const url = songs[Math.floor(Math.random() * songs.length)];
+    // Sequential round-robin: play through ALL songs before repeating
+    const lastIndex = entertainmentTrackIndex.get(channelId) ?? -1;
+    const nextIndex = (lastIndex + 1) % songs.length;
+    entertainmentTrackIndex.set(channelId, nextIndex);
+    
+    const url = songs[nextIndex];
     const urlParams = new URL(url, 'http://localhost').searchParams;
     const fileParam = urlParams.get('file');
     const name = fileParam ? decodeURIComponent(fileParam).replace(/\.[^/.]+$/, '') : 'Music';
-    console.log(`[queueManager] Entertainment song: ${name}`);
+    console.log(`[queueManager] Entertainment song: ${name} [${nextIndex + 1}/${songs.length}]`);
     return {
       id: null,
       title: name,
