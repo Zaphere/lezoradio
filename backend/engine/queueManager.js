@@ -302,7 +302,7 @@ export async function getNextContent(channelId, language = 'fr', maxEvents = 3, 
 /**
  * Get unplayed events filtered by provider and region.
  */
-async function getUnplayedEventsByProvider(channelId, provider, limit = 3, language = null) {
+export async function getUnplayedEventsByProvider(channelId, provider, limit = 3, language = null) {
   const channel = stationController.getChannel(channelId);
   const channelRegion = channel?.region || null;
   const playedSet = await getPlayedEventIds(channelId);
