@@ -31,6 +31,17 @@
     touch-action: pan-y;
   }
 
+  :root {
+    --bg-primary: var(--color-bg-primary);
+    --text-primary: var(--color-text-primary);
+    --text-secondary: var(--color-text-secondary);
+    --surface: var(--color-surface);
+    --surface-hover: var(--color-surface-hover);
+    --surface-subtle: var(--color-surface-subtle);
+    --border: var(--color-border);
+    --primary: var(--color-primary);
+  }
+
   body {
     background-color: var(--color-bg-primary);
     color: var(--color-text-primary);
@@ -49,6 +60,14 @@
     --color-border: rgba(255, 255, 255, 0.08);
     background-color: #0F0F12;
     color: #F1F5F9;
+    
+    --bg-primary: #0F0F12;
+    --text-primary: #F1F5F9;
+    --text-secondary: #94A3B8;
+    --surface: rgba(255, 255, 255, 0.06);
+    --surface-hover: rgba(255, 255, 255, 0.1);
+    --surface-subtle: rgba(255, 255, 255, 0.04);
+    --border: rgba(255, 255, 255, 0.08);
   }
 
   ::-webkit-scrollbar {

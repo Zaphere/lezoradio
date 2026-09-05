@@ -40,7 +40,7 @@ export function determineNextSegment(channelState, channelConfig, engineConfig) 
     Math.random() * ((engineConfig?.station_id_interval_max_ms || 1800000) - (engineConfig?.station_id_interval_min_ms || 1200000));
   const isStationIdTime = elapsed > stationIdInterval && lastSegmentType !== SEGMENT_TYPES.JINGLE;
 
-  const isTimeAnnouncement = minute < 2 && (minute === 0 || minute === 30);
+  const isTimeAnnouncement = minute === 0;
 
   if (isBulletinTime) return { type: SEGMENT_TYPES.BULLETIN, reason: 'scheduled_bulletin' };
   if (isStationIdTime) return { type: SEGMENT_TYPES.JINGLE, reason: 'station_id_interval' };

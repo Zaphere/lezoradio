@@ -12,8 +12,8 @@ export const TIMING = {
   CROSSFADE_DURATION: 500,        // Faster crossfade
   FADE_STEP_MS: 20,               // Smoother, faster fade steps
   FULL_VOLUME: 1.0,
-  BACKGROUND_VOLUME: 0.10,        // Ambient bed: very quiet under presenters
-  DUCKED_BACKGROUND_VOLUME: 0.03, // Near-silent when voice is active
+  BACKGROUND_VOLUME: 0.25,        // Ambient bed: noticeable under presenters
+  DUCKED_BACKGROUND_VOLUME: 0.10, // Audible when voice is active
   BACKGROUND_FILL_VOLUME: 0.42,
   ENTERTAINMENT_DELAY_MS: 3000,   // Much shorter entertainment delay
   BROADCAST_SEGMENT_MS: 270000,

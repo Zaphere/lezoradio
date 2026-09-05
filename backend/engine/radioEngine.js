@@ -1,7 +1,7 @@
 // backend/engine/radioEngine.js
 // Top-level orchestrator — event-driven, coordinates all engine modules.
 
-import { ENGINE_VERSION, SEGMENT_TYPES, DEFAULT_STATE, VOICE_IDS, getDefaultBackgroundBedUrl } from './constants.js';
+import { ENGINE_VERSION, SEGMENT_TYPES, DEFAULT_STATE, VOICE_IDS, getDefaultBackgroundBedUrl, getNewsTransitionUrl } from './constants.js';
 import * as stationController from './stationController.js';
 import * as languageController from './languageController.js';
 import * as contentNormalizer from './contentNormalizer.js';
@@ -57,6 +57,7 @@ class RadioEngine {
     this._recentlyPlayed = new Map(); // channelId -> Map<eventId, timestamp> — in-memory dedup safety net
     this._consecutiveContent = new Map(); // channelId -> count — forces a song after CONTENT_BEFORE_MUSIC
     this._pendingNewContentDispatch = new Map(); // channelId -> setTimeout handle — debounced dispatch after new event
+    this._pendingBulletin = new Set(); // channelIds waiting for bulletin dispatch after news jingle
   }
 
   /**
@@ -317,9 +318,10 @@ class RadioEngine {
         ? VOICE_IDS.SWAHILI_FEMALE
         : VOICE_IDS.FRENCH_ADAM;
 
-    // French global (Africa News) keeps Adam for bulletins/alerts.
-    // Regional channels keep their own cloned voice for every content type.
-    if ((contentType === 'alert' || contentType === 'bulletin') && channelLang === 'fr') {
+    // ALL bulletins are presented in French by the same presenter (French Adam).
+    // Regional language bulletins are still read in their own language, but the
+    // bulletin intro/outro and station framing always use French.
+    if (contentType === 'alert' || contentType === 'bulletin') {
       return {
         language: 'fr',
         voice: languageController.resolveVoice(stationId, 'fr', 'bulletin')
@@ -483,9 +485,18 @@ class RadioEngine {
     const timer = setTimeout(() => {
       this.pendingTimers.delete(channelId);
       if (!this.running) return;
-      this.dispatchNextContent(channelId, false).catch(err =>
-        console.error(`[radioEngine] dispatchNextContent failed for ${channelId}:`, err.message)
-      );
+      // If a bulletin is pending after the news jingle, dispatch as interrupt
+      const isBulletinPending = this._pendingBulletin.has(channelId);
+      if (isBulletinPending) {
+        this._pendingBulletin.delete(channelId);
+        this.dispatchNextContent(channelId, true).catch(err =>
+          console.error(`[radioEngine] Bulletin dispatch failed for ${channelId}:`, err.message)
+        );
+      } else {
+        this.dispatchNextContent(channelId, false).catch(err =>
+          console.error(`[radioEngine] dispatchNextContent failed for ${channelId}:`, err.message)
+        );
+      }
     }, delayMs);
     this.pendingTimers.set(channelId, timer);
   }
@@ -859,7 +870,7 @@ class RadioEngine {
       console.log(`[${new Date().toISOString()}] [radioEngine] Content unchanged for ${contentType} on ${channelId} — reusing cached audio`);
       const durationSeconds = ttsGenerator.durationSecondsFromFile(cached.audio_file_size, fullText);
       this.updateCurrentSegment(channelId, {
-        segment_type: SEGMENT_TYPES.BULLETIN,
+        segment_type: isInterrupt ? SEGMENT_TYPES.BULLETIN : SEGMENT_TYPES.TTS,
         segment_id: `${contentType}-${contentHash.substring(0,8)}`,
         audio_url: cached.audio_url,
         audio_type: 'tts',
@@ -903,7 +914,7 @@ class RadioEngine {
     const topEvent = events[0] || {};
 
     this.updateCurrentSegment(channelId, {
-      segment_type: contentType === 'traffic' ? SEGMENT_TYPES.BULLETIN : SEGMENT_TYPES.BULLETIN,
+      segment_type: isInterrupt ? SEGMENT_TYPES.BULLETIN : SEGMENT_TYPES.TTS,
       segment_id: `${contentType}-${Date.now()}`,
       audio_url: ttsResult.audioUrl,
       audio_type: 'tts',
@@ -954,8 +965,8 @@ class RadioEngine {
   }
 
   /**
-   * Trigger a bulletin (called by scheduler). Delegates to dispatchNextContent as an interrupt.
-   * Cancels any pending natural-end timer so both don't fire for the same channel.
+   * Trigger a bulletin (called by scheduler). Plays the News Intro Transition jingle first,
+   * then dispatches the bulletin content in French. Cancels any pending natural-end timer.
    */
   async triggerBulletin(data) {
     const { channelId } = data;
@@ -967,6 +978,34 @@ class RadioEngine {
       this.pendingTimers.delete(channelId);
     }
 
+    // Play the News Intro Transition jingle before the bulletin
+    const transitionUrl = getNewsTransitionUrl();
+    if (transitionUrl) {
+      const state = this.channels.get(channelId);
+      const channel = stationController.getChannel(channelId);
+      const stationName = channel?.name || channel?.station_name || 'Radio Lezo';
+
+      this.updateCurrentSegment(channelId, {
+        segment_type: SEGMENT_TYPES.JINGLE,
+        segment_id: `news-intro-${Date.now()}`,
+        audio_url: transitionUrl,
+        audio_type: 'jingle',
+        title: `${stationName} — News Intro`,
+        duration_seconds: 8,
+        language: 'fr',
+        voice_id: null,
+        transition_type: 'duck',
+        duck_volume: 0.30,
+        description: 'News transition jingle',
+      });
+
+      // After jingle finishes, dispatch the bulletin content as interrupt
+      this._pendingBulletin.add(channelId);
+      this.scheduleNextContent(channelId, 8 * 1000);
+      return;
+    }
+
+    // No transition jingle available — dispatch bulletin directly
     await this.dispatchNextContent(channelId, true);
   }
 

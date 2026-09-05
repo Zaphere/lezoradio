@@ -130,7 +130,7 @@ export function useAudioExecutor({
       return;
     }
 
-    const handleTrackAudio = (url: string, _transition: typeof transitionType) => {
+    const handleVoiceAudio = (url: string, _transition: typeof transitionType) => {
       const duration = durationSeconds > 0 ? durationSeconds * 1000 : 30000;
 
       // Ensure background music is always playing underneath the presenter
@@ -145,6 +145,19 @@ export function useAudioExecutor({
       }
 
       // Play presenter voice/TTS track immediately
+      mgr.playTrack(url);
+      setState({ isPlaying: true, isPaused: false, currentTime: 0, duration: duration / 1000 });
+      startProgressTimer();
+    };
+
+    const handleMusicTrack = (url: string) => {
+      const duration = durationSeconds > 0 ? durationSeconds * 1000 : 30000;
+
+      // Stop background music — entertainment track plays standalone
+      if (mgr.isBackgroundPlaying) {
+        mgr.stopBackground(true);
+      }
+
       mgr.playTrack(url);
       setState({ isPlaying: true, isPaused: false, currentTime: 0, duration: duration / 1000 });
       startProgressTimer();
@@ -185,11 +198,13 @@ export function useAudioExecutor({
 
     switch (segmentType) {
       case 'track':
+        handleMusicTrack(audioUrl);
+        break;
       case 'tts':
       case 'jingle':
       case 'bulletin':
       case 'announcement':
-        handleTrackAudio(audioUrl, transitionType);
+        handleVoiceAudio(audioUrl, transitionType);
         break;
       case 'intro':
         handleIntro(audioUrl);

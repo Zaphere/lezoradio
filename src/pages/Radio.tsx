@@ -2,12 +2,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import type { StationRecord, BroadcastMode } from '../lib/types';
-import { getChannel, slugify, getGlobalChannelBySlug } from '../lib/channels';
+import { getChannel, slugify, getGlobalChannelBySlug, CHANNELS } from '../lib/channels';
 import type { Channel } from '../lib/channels';
 import { useNowPlaying } from '../hooks/useNowPlaying';
 import { useAudioExecutor } from '../hooks/useAudioExecutor';
 import { fetchStations, pruneOldData } from '../lib/supabase';
-import { getFlagEmoji } from '../lib/types';
 import type { DCRegion } from '../lib/drcRegions';
 import { DRC_COUNTRY, getRegionBySlug } from '../lib/drcRegions';
 import { resolveTimezone } from '../lib/stationTime';
@@ -18,7 +17,6 @@ import AudioVisualizer from '../components/AudioVisualizer';
 import FrequencyDial from '../components/FrequencyDial';
 import RadioControlsSheet from '../components/player/RadioControlsSheet';
 import BroadcastModeIndicator from '../components/player/BroadcastModeIndicator';
-import AudioPlayerBar from '../components/player/AudioPlayerBar';
 
 const SOFT_BTN = 'rf-press touch-manipulation select-none';
 
@@ -105,9 +103,9 @@ export default function Radio() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 transition-colors duration-300">
+      <div className="min-h-screen flex items-center justify-center bg-bg-primary transition-colors duration-300">
         <div className="relative flex items-center justify-center">
-          <div className="w-10 h-10 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+          <div className="w-10 h-10 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
         </div>
       </div>
     );
@@ -133,13 +131,20 @@ function RadioPage({
   const [skipToLive, setSkipToLive] = useState(false);
   const [volume, setVolume] = useState(1);
 
-  const isGlobal = Boolean(channelOverride);
-
+  const currentChannel = getChannel(currentFreq);
+  const isGlobal = Boolean(channelOverride) || Boolean(currentChannel?.isGlobal);
   const channelId = useMemo(() => {
-    if (channelOverride) return 'global-main';
+    if (currentChannel?.isGlobal) {
+      return `global-${currentChannel.slug}`;
+    }
+    if (channelOverride) return `global-${channelOverride.slug}`;
     if (drcRegion) return `${drcRegion.slug}-main`;
     return station.id;
-  }, [channelOverride, drcRegion, station.id]);
+  }, [channelOverride, drcRegion, station.id, currentChannel]);
+
+  const isGlobalChannel = currentChannel?.isGlobal;
+  const displayName = isGlobalChannel ? currentChannel.name : (drcRegion ? `${DRC_COUNTRY.name} \u2014 ${drcRegion.name}` : station.name);
+  const displaySubtitle = isGlobalChannel ? currentChannel.description : (drcRegion ? drcRegion.description : station.region);
 
   const latestVersionRef = useRef(0);
   const { nowPlaying, error: nowPlayingError, refetch: refetchNowPlaying } = useNowPlaying({
@@ -154,13 +159,8 @@ function RadioPage({
   }, [nowPlaying?.version]);
 
   useEffect(() => {
-    if (!channelOverride) return;
-
-    const freqChannel = getChannel(currentFreq);
-    if (freqChannel && freqChannel.slug !== channelOverride.slug) {
-      navigate(`/channel/${freqChannel.slug}`, { replace: true });
-    }
-  }, [currentFreq, channelOverride, navigate]);
+    // This effect is now handled by handleFrequencyChange
+  }, [currentFreq]);
 
   const handleTrackEnd = useCallback(() => {
     const versionAtEnd = latestVersionRef.current;
@@ -190,43 +190,8 @@ function RadioPage({
     refetchNowPlaying();
   }, [refetchNowPlaying]);
 
-  const handleNext = useCallback(async () => {
-    try {
-      await fetch('/api/radio/skip', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channel_id: channelId }),
-      });
-    } catch {
-      // Fallback silently
-    }
-    refetchNowPlaying();
-  }, [channelId, refetchNowPlaying]);
-
   const isLive = userStarted && nowPlaying !== null && nowPlaying.segmentType !== 'silence';
   const isMusicMode = nowPlaying?.segmentType === 'ambient' && nowPlaying.audioType === 'stream';
-
-  const displayEmoji = isGlobal
-    ? channelOverride?.emoji
-    : drcRegion
-    ? drcRegion.emoji
-    : station.image_url
-    ? undefined
-    : getFlagEmoji(station.country_code);
-
-  const displayImage = !isGlobal && !drcRegion ? station.image_url : undefined;
-  const displayName = drcRegion ? `${DRC_COUNTRY.name} \u2014 ${drcRegion.name}` : station.name;
-  const displaySubtitle = isGlobal
-    ? channelOverride?.description
-    : drcRegion
-    ? drcRegion.description
-    : station.region;
-
-  const displayIcon = displayImage ? (
-    <img src={displayImage} alt={displayName} className="w-14 h-14 rounded-full object-cover shadow-sm" />
-  ) : (
-    <span className="text-4xl drop-shadow-xs">{displayEmoji}</span>
-  );
 
   const theme = useMemo(
     () => getCountryTheme(station.country_code, displayName, drcRegion?.slug ?? null),
@@ -255,15 +220,35 @@ function RadioPage({
 
   const handleFrequencyChange = useCallback((freq: string) => {
     setCurrentFreq(freq);
-  }, []);
+    const freqChannel = getChannel(freq);
+    if (freqChannel && freqChannel.isGlobal) {
+      navigate(`/radio/global/${freqChannel.slug}`, { replace: true });
+    }
+  }, [navigate]);
 
-  const handleVolumeChange = useCallback(
-    (v: number) => {
-      setVolume(v);
-      audio.setVolume(v);
-    },
-    [audio],
-  );
+  const handlePreviousStation = useCallback(() => {
+    const freqChannel = getChannel(currentFreq);
+    if (freqChannel) {
+      const currentIndex = CHANNELS.findIndex(c => c.frequency === freqChannel.frequency);
+      const prevIndex = currentIndex > 0 ? currentIndex - 1 : CHANNELS.length - 1;
+      const prevChannel = CHANNELS[prevIndex];
+      if (prevChannel.isGlobal) {
+        navigate(`/radio/global/${prevChannel.slug}`, { replace: true });
+      }
+    }
+  }, [currentFreq, navigate]);
+
+  const handleNextStation = useCallback(() => {
+    const freqChannel = getChannel(currentFreq);
+    if (freqChannel) {
+      const currentIndex = CHANNELS.findIndex(c => c.frequency === freqChannel.frequency);
+      const nextIndex = currentIndex < CHANNELS.length - 1 ? currentIndex + 1 : 0;
+      const nextChannel = CHANNELS[nextIndex];
+      if (nextChannel.isGlobal) {
+        navigate(`/radio/global/${nextChannel.slug}`, { replace: true });
+      }
+    }
+  }, [currentFreq, navigate]);
 
   const handlePlayPause = useCallback(() => {
     audio.resumeAudioContext();
@@ -276,17 +261,14 @@ function RadioPage({
     }
   }, [audio, refetchNowPlaying]);
 
-  const handleSeek = useCallback(
-    (time: number) => {
-      audio.seek(time);
-    },
-    [audio],
-  );
-
   useEffect(() => {
     pruneOldData();
     const interval = setInterval(pruneOldData, 3600000);
     return () => clearInterval(interval);
+  }, []);
+
+  const handleVolumeChange = useCallback((v: number) => {
+    setVolume(v);
   }, []);
 
   const isVoicePlaying =
@@ -297,6 +279,7 @@ function RadioPage({
     if (!isLive) return 'IDLE';
     if (isMusicMode) return 'MUSIC_FILL';
     if (nowPlaying?.segmentType === 'bulletin') return 'GLOBAL_BULLETIN';
+    if (nowPlaying?.segmentType === 'tts' || nowPlaying?.segmentType === 'announcement') return 'LIVE_NEWS';
     return 'LIVE_NEWS';
   }, [isLive, isMusicMode, nowPlaying?.segmentType]);
 
@@ -307,7 +290,7 @@ function RadioPage({
 
   return (
     <div
-      className="flex flex-col h-full min-h-screen select-none pb-6 transition-colors duration-500 relative overflow-hidden bg-slate-50 text-slate-800"
+      className="flex flex-col h-full min-h-screen select-none pb-6 transition-colors duration-500 relative overflow-hidden bg-bg-primary text-text-primary"
       style={{ ...themeVars }}
     >
       {/* Background Soft Radial Accent */}
@@ -333,11 +316,11 @@ function RadioPage({
       `}</style>
 
       {/* Header */}
-      <div className="sticky top-0 z-40 bg-white/70 backdrop-blur-md border-b border-slate-200/80 shadow-xs shrink-0">
+      <div className="sticky top-0 z-40 bg-bg-primary/70 backdrop-blur-md border-b border-border shadow-xs shrink-0">
         <div className="max-w-lg mx-auto w-full px-4 py-3 flex items-center justify-between">
           <button
             onClick={() => navigate('/')}
-            className={`${SOFT_BTN} flex items-center gap-2 text-slate-700 hover:text-indigo-600 bg-slate-100/80 hover:bg-slate-200/80 px-3.5 py-1.5 rounded-full border border-slate-200 text-xs font-semibold tracking-wide transition-colors`}
+            className={`${SOFT_BTN} flex items-center gap-2 text-text-primary hover:text-primary bg-surface-subtle hover:bg-surface-hover px-3.5 py-1.5 rounded-full border border-border text-xs font-semibold tracking-wide transition-colors`}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
@@ -357,25 +340,12 @@ function RadioPage({
       <div className="flex-1 min-h-0 overflow-y-auto radio-scrollable-content max-w-lg mx-auto w-full px-4 pt-6 pb-4 space-y-6 z-10">
         {/* Station Info Header */}
         <div className="text-center space-y-2.5 rf-fade-up">
-          <div
-            className="inline-flex items-center justify-center w-20 h-20 rounded-full transition-all duration-700 relative overflow-hidden ring-4 ring-white shadow-xl"
-            style={{
-              background: theme.gradient,
-              boxShadow: isLive
-                ? `0 10px 25px -5px rgba(79, 70, 229, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.05)`
-                : `0 8px 16px -4px rgba(0, 0, 0, 0.1)`,
-            }}
-          >
-            <div className="absolute inset-0 bg-white/20 backdrop-blur-xs" />
-            <span className="relative z-10 drop-shadow-xs">{displayIcon}</span>
-          </div>
-
           <div className="space-y-1">
-            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+            <h1 className="text-2xl font-extrabold text-text-primary tracking-tight">
               {displayName}
             </h1>
             {displaySubtitle && (
-              <p className="text-xs font-medium text-slate-500 max-w-xs mx-auto leading-relaxed">
+              <p className="text-xs font-medium text-text-secondary max-w-xs mx-auto leading-relaxed">
                 {displaySubtitle}
               </p>
             )}
@@ -387,21 +357,45 @@ function RadioPage({
         </div>
 
         {/* Dial Component */}
-        <div className="flex justify-center relative py-2">
-          <div
-            className="absolute inset-0 m-auto w-40 h-40 rounded-full blur-2xl opacity-20 pointer-events-none transition-opacity duration-700 bg-indigo-500"
-          />
-          <div className="relative touch-none" style={{ touchAction: 'none' }}>
-            <FrequencyDial
-              frequency={currentFreq}
-              isActive={isLive}
-              onChange={handleFrequencyChange}
+        <div className="flex justify-center items-center relative py-2 gap-4">
+          <button
+            onClick={handlePreviousStation}
+            className="w-12 h-12 rounded-full bg-surface border border-border flex items-center justify-center shadow-sm hover:bg-surface-hover transition-all active:scale-95"
+            disabled={!userStarted}
+          >
+            <svg className="w-5 h-5 text-text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          
+          <div className="relative">
+            <div
+              className="absolute inset-0 m-auto w-40 h-40 rounded-full blur-2xl opacity-20 pointer-events-none transition-opacity duration-700 bg-indigo-500"
             />
+            <div className="relative touch-none" style={{ touchAction: 'none' }}>
+              <FrequencyDial
+                frequency={currentFreq}
+                isActive={isLive}
+                isPlaying={audio.isPlaying}
+                onChange={handleFrequencyChange}
+                onPlay={handlePlayPause}
+              />
+            </div>
           </div>
+          
+          <button
+            onClick={handleNextStation}
+            className="w-12 h-12 rounded-full bg-surface border border-border flex items-center justify-center shadow-sm hover:bg-surface-hover transition-all active:scale-95"
+            disabled={!userStarted}
+          >
+            <svg className="w-5 h-5 text-text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
         </div>
 
         {/* Audio Visualizer Card */}
-        <div className="flex flex-col items-center justify-center py-3 bg-white border border-slate-200/80 rounded-2xl shadow-sm">
+        <div className="flex flex-col items-center justify-center py-3 bg-surface border border-border rounded-2xl shadow-sm">
           <AudioVisualizer isPlaying={audio.isPlaying} analyser={audio.getAnalyser()} size="medium" />
         </div>
 
@@ -425,7 +419,7 @@ function RadioPage({
             </span>
 
             {nowPlayingError && (
-              <div className="mt-2 rounded-xl bg-red-50 border border-red-200 px-4 py-2 text-xs font-medium text-red-600">
+              <div className="mt-2 rounded-xl bg-[var(--color-alert)]/10 border border-[var(--color-alert)]/30 px-4 py-2 text-xs font-medium text-[var(--color-alert)]">
                 Connection error: {nowPlayingError}
               </div>
             )}
@@ -435,45 +429,25 @@ function RadioPage({
         {/* Controls and Script Display */}
         {userStarted && (
           <div className="space-y-4">
-            {/* Embedded Player Bar Wrapper */}
-            <div className="bg-white border border-slate-200/80 rounded-2xl p-2.5 shadow-sm">
-              <AudioPlayerBar
-                title={nowPlaying?.title ?? 'Radio Lezo — Background'}
-                subtitle={nowPlaying?.artist ?? undefined}
-                isPlaying={audio.isPlaying}
-                isPaused={audio.isPaused}
-                currentTime={audio.currentTime}
-                duration={audio.duration}
-                hasPrev={false}
-                hasNext={!skipToLive}
-                onPlayPause={handlePlayPause}
-                onPrev={() => {}}
-                onNext={handleNext}
-                onSeek={handleSeek}
-                volume={volume}
-                onVolumeChange={handleVolumeChange}
-              />
-            </div>
-
             {/* On Air Script Container */}
             {nowPlaying?.description &&
               nowPlaying.segmentType !== 'ambient' &&
               nowPlaying.segmentType !== 'silence' && (
-                <div className="relative overflow-hidden bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
-                  <div className="absolute top-0 left-0 bottom-0 w-1 bg-indigo-600" />
+                <div className="relative overflow-hidden bg-surface rounded-2xl border border-border p-4 shadow-xs">
+                  <div className="absolute top-0 left-0 bottom-0 w-1 bg-primary" />
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <div
                         className={`w-2 h-2 rounded-full ${
-                          isVoicePlaying ? 'bg-indigo-600 animate-pulse ring-4 ring-indigo-100' : 'bg-slate-300'
+                          isVoicePlaying ? 'bg-primary animate-pulse ring-4 ring-primary/20' : 'bg-text-secondary'
                         }`}
                       />
-                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      <span className="text-[11px] font-bold text-text-secondary uppercase tracking-wider">
                         {isVoicePlaying ? 'On Air Script' : 'Script Ready'}
                       </span>
                     </div>
                   </div>
-                  <p className="text-sm text-slate-700 leading-relaxed font-normal">
+                  <p className="text-sm text-text-primary leading-relaxed font-normal">
                     {nowPlaying.description}
                   </p>
                 </div>
@@ -484,7 +458,7 @@ function RadioPage({
         {/* Up Next Notice */}
         {nextSegmentLabel && (
           <div className="text-center py-1">
-            <span className="inline-block text-xs font-medium text-slate-500 bg-slate-100 px-4 py-1.5 rounded-full border border-slate-200/60">
+            <span className="inline-block text-xs font-medium text-text-secondary bg-surface-subtle px-4 py-1.5 rounded-full border border-border/60">
               {nextSegmentLabel}
             </span>
           </div>

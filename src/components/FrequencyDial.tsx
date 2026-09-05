@@ -5,8 +5,10 @@ import { playDialClick } from '../lib/audio';
 interface Props {
   frequency: string;
   isActive: boolean;
+  isPlaying?: boolean;
   tunerSoundEnabled?: boolean;
   onChange?: (freq: string) => void;
+  onPlay?: () => void;
 }
 
 const TICK_COUNT = 24;
@@ -38,7 +40,7 @@ function describeArc(cx: number, cy: number, r: number, startAngle: number, endA
   return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 0 ${end.x} ${end.y}`;
 }
 
-export default function FrequencyDial({ frequency, isActive, tunerSoundEnabled = false, onChange }: Props) {
+export default function FrequencyDial({ frequency, isActive, isPlaying = false, tunerSoundEnabled = false, onChange, onPlay }: Props) {
   const knobRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragFreq, setDragFreq] = useState(parseFloat(frequency));
@@ -71,6 +73,16 @@ export default function FrequencyDial({ frequency, isActive, tunerSoundEnabled =
     const rect = el.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
+    
+    // Check if click is in the center area (play button zone)
+    const distance = Math.sqrt(Math.pow(clientX - cx, 2) + Math.pow(clientY - cy, 2));
+    const centerButtonRadius = 24; // 12px radius * 2 for touch area
+    
+    if (distance < centerButtonRadius) {
+      // Click is in center button area, don't start drag
+      return;
+    }
+    
     const startAngle = Math.atan2(clientY - cy, clientX - cx) * (180 / Math.PI);
     dragState.current = { startAngle, startFreq: currentFreqRef.current };
     setIsDragging(true);
@@ -208,10 +220,10 @@ export default function FrequencyDial({ frequency, isActive, tunerSoundEnabled =
         <div
           className={`absolute rounded-full cursor-grab active:cursor-grabbing ${
             isDragging
-              ? 'shadow-[0_16px_48px_rgba(0,0,0,0.25)]'
+              ? 'shadow-[0_16px_48px_rgba(0,0,0,0.25)] dark:shadow-[0_16px_48px_rgba(255,255,255,0.1)]'
               : hover
-                ? 'shadow-[0_12px_32px_rgba(0,0,0,0.18)]'
-                : 'shadow-[0_8px_24px_rgba(0,0,0,0.12)]'
+                ? 'shadow-[0_12px_32px_rgba(0,0,0,0.18)] dark:shadow-[0_12px_32px_rgba(255,255,255,0.08)]'
+                : 'shadow-[0_8px_24px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_24px_rgba(255,255,255,0.06)]'
           }`}
           style={{
             width: 100,
@@ -247,20 +259,34 @@ export default function FrequencyDial({ frequency, isActive, tunerSoundEnabled =
               transition: 'background 0.3s',
             }}
           />
-          {/* Center dot */}
-          <div
-            className="absolute w-4 h-4 rounded-full top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+          {/* Center play button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onPlay?.();
+            }}
+            className="absolute w-12 h-12 rounded-full top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center cursor-pointer z-20 transition-all duration-200 hover:scale-110 active:scale-95"
             style={{
               background: isActive
                 ? 'radial-gradient(circle at 40% 35%, #00C45E, var(--color-primary))'
                 : 'radial-gradient(circle at 40% 35%, #aaaaaa, #777777)',
               boxShadow: isActive
-                ? '0 0 8px rgba(0,166,81,0.4), inset 0 1px 2px rgba(255,255,255,0.3)'
-                : 'inset 0 1px 2px rgba(255,255,255,0.3)',
-              opacity: isActive ? 1 : 0.5,
-              transition: 'background 0.3s, opacity 0.3s',
+                ? '0 0 12px rgba(0,166,81,0.5), inset 0 2px 4px rgba(255,255,255,0.3)'
+                : 'inset 0 2px 4px rgba(255,255,255,0.3)',
+              opacity: isActive ? 1 : 0.7,
             }}
-          />
+          >
+            {isPlaying ? (
+              <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <rect x="6" y="4" width="4" height="16" rx="1" />
+                <rect x="14" y="4" width="4" height="16" rx="1" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
+          </button>
         </div>
 
         {/* Frequency display overlay */}
@@ -270,12 +296,12 @@ export default function FrequencyDial({ frequency, isActive, tunerSoundEnabled =
         >
           <div
             className={`text-[36px] font-bold font-mono tracking-tight transition-colors ${
-              isActive ? 'text-[#000000] dark:text-[#F1F5F9]' : 'text-[#000000] dark:text-[#94A3B8]'
+              isActive ? 'text-text-primary' : 'text-text-secondary'
             }`}
           >
             {displayFreq}
           </div>
-          <div className="text-sm text-[#000000] dark:text-[#94A3B8] font-medium tracking-wider">FM</div>
+          <div className="text-sm text-text-secondary font-medium tracking-wider">FM</div>
         </div>
       </div>
 
@@ -283,12 +309,12 @@ export default function FrequencyDial({ frequency, isActive, tunerSoundEnabled =
       <div className="mt-4 text-center min-h-[2.5rem]">
         {channel ? (
           <div className={`text-base font-semibold transition-colors ${
-            isActive ? 'text-[#000000] dark:text-[#F1F5F9]' : 'text-[#000000] dark:text-[#94A3B8]'
+            isActive ? 'text-text-primary' : 'text-text-secondary'
           }`}>
             {channel.name}
           </div>
         ) : (
-          <div className="text-sm text-[#000000] dark:text-[#94A3B8]">
+          <div className="text-sm text-text-secondary">
             {isDragging ? 'Tuning...' : '--'}
           </div>
         )}

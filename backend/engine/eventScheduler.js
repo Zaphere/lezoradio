@@ -114,7 +114,7 @@ export function scheduleStationIds(channels, engineConfig) {
  */
 export function scheduleTimeAnnouncements(channels) {
   // Use cron for time announcements
-  const cronExpr = '0,30 * * * *';
+  const cronExpr = '0 * * * *';
   const taskId = 'time_announcements';
 
   if (scheduledTasks.has(taskId)) {
